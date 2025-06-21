@@ -1,0 +1,21 @@
+{
+  "name": "math_reasoning_demo",
+  "version": "1.0.0",
+  "description": "Demo math reasoning adapter",
+  "target_layers": [
+    3,
+    6,
+    9
+  ],
+  "rank": 16,
+  "alpha": 32,
+  "target_modules": [
+    "attn.c_attn",
+    "mlp.c_fc"
+  ],
+  "performance_metrics": {
+    "accuracy": 0.85,
+    "latency_ms": 120
+  },
+  "created_date": "2025-06-21T17:54:47.195575"
+}

@@ -1,0 +1,17 @@
+{
+  "name": "creative_writing_demo",
+  "version": "1.0.0",
+  "description": "Demo creative writing adapter",
+  "target_layers": [
+    3,
+    6,
+    9
+  ],
+  "rank": 16,
+  "alpha": 32,
+  "target_modules": [
+    "attn.c_attn",
+    "mlp.c_fc"
+  ],
+  "created_date": "2025-06-21T17:55:04.876601"
+}

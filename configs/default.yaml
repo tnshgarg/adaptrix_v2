@@ -1,0 +1,87 @@
+# Adaptrix Default Configuration
+
+model:
+  name: "microsoft/DialoGPT-medium"
+  device: "auto" # auto, cpu, cuda, mps
+  precision: "fp16" # fp16, fp32, bf16
+  cache_dir: "./models"
+  trust_remote_code: false
+
+injection:
+  target_layers: [3, 6, 9] # Middle layers for injection (DialoGPT has 12 layers)
+  target_modules:
+    - "attn.c_attn" # Combined Q, K, V projections in DialoGPT
+    - "attn.c_proj" # Attention output projection
+    - "mlp.c_fc" # MLP input
+    - "mlp.c_proj" # MLP output
+  default_rank: 16
+  default_alpha: 32
+  dropout: 0.1
+  enable_context_preservation: true
+  drift_threshold: 0.3
+  context_weight: 0.8
+  validate_context: true
+
+adapters:
+  cache_size: 3 # Maximum adapters in memory
+  storage_path: "./adapters"
+  auto_cleanup: true
+  preload_popular: true
+  validation_enabled: true
+
+performance:
+  max_memory_gb: 8
+  batch_size: 1
+  max_length: 512
+  gradient_checkpointing: true
+  use_cache: true
+  low_cpu_mem_usage: true
+
+routing:
+  default_strategy: "keyword" # keyword, semantic, hybrid
+  confidence_threshold: 0.7
+  fallback_to_base: true
+  multi_adapter_enabled: true
+
+training:
+  batch_size: 8
+  learning_rate: 3e-4
+  epochs: 3
+  warmup_steps: 100
+  max_length: 512
+  save_steps: 500
+  eval_steps: 100
+  logging_steps: 10
+
+monitoring:
+  enabled: true
+  log_level: "INFO"
+  metrics_interval: 60 # seconds
+  storage_backend: "sqlite" # sqlite, json, csv
+  database_path: "./monitoring/metrics.db"
+
+web:
+  host: "0.0.0.0"
+  port: 7860
+  share: false
+  auth_enabled: false
+  max_concurrent_users: 10
+
+cli:
+  verbose: false
+  json_output: false
+  progress_bars: true
+  color_output: true
+
+security:
+  adapter_verification: true
+  sandboxed_execution: false
+  max_adapter_size_mb: 100
+  allowed_sources: ["huggingface", "local"]
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "./logs/adaptrix.log"
+  max_size_mb: 10
+  backup_count: 5
