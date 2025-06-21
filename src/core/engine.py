@@ -80,10 +80,9 @@ class AdaptrixEngine:
                 logger.info("Initializing dynamic loader...")
                 self.dynamic_loader = DynamicLoader(self.layer_injector, self.adapter_manager)
                 
-                # Register injection points for target layers
-                target_layers = config.get('injection.target_layers', [6, 12, 18])
-                target_modules = config.get('injection.target_modules', ['self_attn.q_proj', 'mlp.c_fc'])
-                
+                # Detect model architecture and set appropriate modules
+                target_layers, target_modules = self._detect_model_architecture(model)
+
                 for layer_idx in target_layers:
                     for module_name in target_modules:
                         self.layer_injector.register_injection_point(layer_idx, module_name)
@@ -312,6 +311,125 @@ class AdaptrixEngine:
         except Exception as e:
             logger.error(f"Error during cleanup: {e}")
     
+    def _detect_model_architecture(self, model) -> tuple[List[int], List[str]]:
+        """
+        Detect model architecture and return appropriate target layers and modules.
+
+        Args:
+            model: The loaded model
+
+        Returns:
+            Tuple of (target_layers, target_modules)
+        """
+        try:
+            # Get model config
+            config_obj = getattr(model, 'config', None)
+            if config_obj is None:
+                logger.warning("No model config found, using default GPT-2 settings")
+                return [6, 12, 18], ['attn.c_attn', 'mlp.c_fc']
+
+            model_type = getattr(config_obj, 'model_type', 'unknown')
+            num_layers = getattr(config_obj, 'num_hidden_layers', getattr(config_obj, 'n_layer', 24))
+
+            logger.info(f"Detected model type: {model_type}, layers: {num_layers}")
+
+            # Calculate target layers based on model size
+            if num_layers <= 12:
+                target_layers = [3, 6, 9]
+            elif num_layers <= 24:
+                target_layers = [6, 12, 18]
+            else:
+                # For larger models, spread across more layers
+                step = num_layers // 4
+                target_layers = [step, step * 2, step * 3]
+
+            # Determine target modules based on architecture
+            if model_type in ['qwen2', 'qwen']:
+                # Qwen/DeepSeek architecture
+                target_modules = ['self_attn.q_proj', 'self_attn.v_proj', 'mlp.gate_proj']
+                logger.info("Using Qwen2/DeepSeek module names")
+            elif model_type in ['llama', 'mistral']:
+                # LLaMA/Mistral architecture
+                target_modules = ['self_attn.q_proj', 'self_attn.v_proj', 'mlp.gate_proj']
+                logger.info("Using LLaMA/Mistral module names")
+            elif model_type in ['gpt2', 'gpt_neox']:
+                # GPT-2 style architecture
+                target_modules = ['attn.c_attn', 'mlp.c_fc']
+                logger.info("Using GPT-2 module names")
+            else:
+                # Try to detect by examining the model structure
+                logger.info(f"Unknown model type {model_type}, attempting auto-detection")
+                target_modules = self._auto_detect_modules(model)
+
+            logger.info(f"Selected target layers: {target_layers}")
+            logger.info(f"Selected target modules: {target_modules}")
+
+            return target_layers, target_modules
+
+        except Exception as e:
+            logger.error(f"Error detecting model architecture: {e}")
+            # Fallback to default
+            return [6, 12, 18], ['attn.c_attn', 'mlp.c_fc']
+
+    def _auto_detect_modules(self, model) -> List[str]:
+        """
+        Auto-detect module names by examining the model structure.
+
+        Args:
+            model: The loaded model
+
+        Returns:
+            List of target module names
+        """
+        try:
+            # Try to find the first transformer layer
+            first_layer = None
+
+            # Common patterns for finding layers
+            if hasattr(model, 'layers') and len(model.layers) > 0:
+                first_layer = model.layers[0]
+            elif hasattr(model, 'transformer') and hasattr(model.transformer, 'h'):
+                first_layer = model.transformer.h[0]
+            elif hasattr(model, 'model') and hasattr(model.model, 'layers'):
+                first_layer = model.model.layers[0]
+
+            if first_layer is None:
+                logger.warning("Could not find transformer layers, using default modules")
+                return ['attn.c_attn', 'mlp.c_fc']
+
+            # Examine the layer structure
+            modules = []
+            for name, _ in first_layer.named_children():
+                if 'attn' in name.lower():
+                    # Check attention submodules
+                    attn_module = getattr(first_layer, name)
+                    for sub_name, _ in attn_module.named_children():
+                        if 'q_proj' in sub_name:
+                            modules.append(f"{name}.q_proj")
+                        elif 'v_proj' in sub_name:
+                            modules.append(f"{name}.v_proj")
+                        elif 'c_attn' in sub_name:
+                            modules.append(f"{name}.c_attn")
+                elif 'mlp' in name.lower():
+                    # Check MLP submodules
+                    mlp_module = getattr(first_layer, name)
+                    for sub_name, _ in mlp_module.named_children():
+                        if 'gate_proj' in sub_name:
+                            modules.append(f"{name}.gate_proj")
+                        elif 'c_fc' in sub_name:
+                            modules.append(f"{name}.c_fc")
+
+            if modules:
+                logger.info(f"Auto-detected modules: {modules}")
+                return modules[:3]  # Limit to 3 modules for stability
+            else:
+                logger.warning("No suitable modules found, using default")
+                return ['attn.c_attn', 'mlp.c_fc']
+
+        except Exception as e:
+            logger.error(f"Error in auto-detection: {e}")
+            return ['attn.c_attn', 'mlp.c_fc']
+
     def _check_initialized(self) -> bool:
         """Check if engine is properly initialized."""
         if not self._initialized:

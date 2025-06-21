@@ -1,0 +1,18 @@
+{
+  "name": "simple_math",
+  "version": "1.0.0",
+  "description": "Simple math adapter for basic arithmetic",
+  "source": "manual_creation",
+  "base_model": "microsoft/DialoGPT-small",
+  "target_layers": [
+    3,
+    6,
+    9
+  ],
+  "target_modules": [
+    "attn.c_attn",
+    "mlp.c_fc"
+  ],
+  "rank": 8,
+  "alpha": 16
+}

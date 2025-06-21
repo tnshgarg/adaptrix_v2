@@ -31,13 +31,13 @@ CODE_ADAPTERS = [
 GENERAL_ADAPTERS = [
     "tloen/alpaca-lora-7b",           # Classic Alpaca LoRA
     "samwit/alpaca7B-lora",          # Alternative Alpaca
-    "chavinlo/gpt4-x-alpaca",        # GPT-4 style responses
+    # "chavinlo/gpt4-x-alpaca",        # GPT-4 style responses
 ]
 
 # Smaller/compatible adapters for testing
 TEST_ADAPTERS = [
     "tloen/alpaca-lora-7b",
-    "chavinlo/gpt4-x-alpaca",
+    "winglian/wizardlm-7b-uncensored-lora",
 ]
 
 

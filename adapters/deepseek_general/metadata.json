@@ -1,0 +1,19 @@
+{
+  "name": "deepseek_general",
+  "version": "1.0.0",
+  "description": "General conversation adapter for DeepSeek-R1",
+  "source": "manual_creation",
+  "base_model": "deepseek-ai/deepseek-r1-distill-qwen-1.5b",
+  "target_layers": [
+    6,
+    12,
+    18
+  ],
+  "target_modules": [
+    "self_attn.q_proj",
+    "self_attn.v_proj",
+    "mlp.gate_proj"
+  ],
+  "rank": 16,
+  "alpha": 32
+}

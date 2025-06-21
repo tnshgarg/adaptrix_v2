@@ -132,7 +132,7 @@ class LayerInjector:
             raise RuntimeError("Could not find transformer layers")
         
         # Extract target modules from each layer
-        target_module_names = config.get('injection.target_modules', ['self_attn.q_proj', 'mlp.c_fc'])
+        target_module_names = config.get('injection.target_modules', ['attn.c_attn', 'mlp.c_fc'])
         
         for layer_idx, layer in enumerate(layers):
             for module_name in target_module_names:
@@ -246,8 +246,10 @@ class LayerInjector:
                 # Apply LoRA transformations from active adapters
                 # Only apply LoRA for the specific module this hook is attached to
                 total_lora_output = torch.zeros_like(output)
+                lora_applied = False
 
                 for adapter_name in self.active_adapters[layer_idx]:
+                    # Only apply LoRA for the specific module this hook is attached to
                     lora_key = f"{adapter_name}_{layer_idx}_{module_name}"
 
                     if lora_key in self.lora_layers:
@@ -259,25 +261,35 @@ class LayerInjector:
                                 # Ensure LoRA output matches expected output dimensions
                                 if lora_output.shape == output.shape:
                                     total_lora_output += lora_output
+                                    lora_applied = True
+                                    logger.debug(f"Successfully applied LoRA {lora_key}: {lora_output.shape}")
                                 else:
-                                    logger.debug(f"LoRA output shape {lora_output.shape} doesn't match expected {output.shape} for {lora_key}")
-                                    # Skip this LoRA layer to avoid dimension mismatch
+                                    logger.warning(f"LoRA output shape {lora_output.shape} doesn't match expected {output.shape} for {lora_key}")
+                                    logger.warning(f"Skipping LoRA {lora_key} due to dimension mismatch")
                                     continue
                             except Exception as e:
-                                logger.debug(f"LoRA computation failed for {lora_key}: {e}")
+                                logger.warning(f"LoRA computation failed for {lora_key}: {e}")
                                 continue
 
-                # Apply context preservation if enabled and there are active adapters
-                if self.enable_context_preservation and layer_idx in self.active_adapters and self.active_adapters[layer_idx]:
-                    final_output = self.context_injector.inject_with_context(
-                        layer_idx=layer_idx,
-                        input_hidden_states=output,
-                        adapter_output=total_lora_output,
-                        attention_mask=attention_mask
-                    )
+                # Apply context preservation if enabled and LoRA was applied
+                if self.enable_context_preservation and lora_applied:
+                    try:
+                        final_output = self.context_injector.inject_with_context(
+                            layer_idx=layer_idx,
+                            input_hidden_states=output,
+                            adapter_output=total_lora_output,
+                            attention_mask=attention_mask
+                        )
+                    except Exception as e:
+                        logger.warning(f"Context preservation failed for layer {layer_idx}: {e}")
+                        # Fallback to standard residual connection
+                        final_output = output + total_lora_output
                 else:
                     # Standard LoRA residual connection
-                    final_output = output + total_lora_output
+                    if lora_applied:
+                        final_output = output + total_lora_output
+                    else:
+                        final_output = output
 
                 return final_output
 
@@ -300,7 +312,7 @@ class LayerInjector:
             True if injection successful
         """
         try:
-            target_modules = config.get('injection.target_modules', ['self_attn.q_proj', 'mlp.c_fc'])
+            target_modules = config.get('injection.target_modules', ['attn.c_attn', 'mlp.c_fc'])
             
             for module_name in target_modules:
                 # Check if weights exist for this module
@@ -380,7 +392,7 @@ class LayerInjector:
                 del self.active_adapters[layer_idx][adapter_name]
             
             # Remove LoRA layers
-            target_modules = config.get('injection.target_modules', ['self_attn.q_proj', 'mlp.c_fc'])
+            target_modules = config.get('injection.target_modules', ['attn.c_attn', 'mlp.c_fc'])
             
             for module_name in target_modules:
                 lora_key = f"{adapter_name}_{layer_idx}_{module_name}"

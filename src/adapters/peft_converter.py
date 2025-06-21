@@ -223,6 +223,17 @@ class PEFTConverter:
         
         # Map PEFT target modules to Adaptrix target modules
         module_mapping = self._create_module_mapping(target_modules, model_info['architecture'])
+        logger.info(f"Module mapping: {module_mapping}")
+
+        # Find all layers in the PEFT weights
+        layer_numbers = set()
+        for key in peft_weights.keys():
+            import re
+            layer_match = re.search(r'\.(\d+)\.', key)
+            if layer_match:
+                layer_numbers.add(int(layer_match.group(1)))
+
+        logger.info(f"Found layers in PEFT weights: {sorted(layer_numbers)}")
         
         # Distribute weights across target layers
         converted_weights = {}
@@ -240,26 +251,19 @@ class PEFTConverter:
                 if not peft_module:
                     continue
                 
-                # Look for LoRA A and B weights for this layer and module
-                lora_A_key = f"base_model.model.{model_info['layer_prefix']}.{layer_idx}.{peft_module}.lora_A.weight"
-                lora_B_key = f"base_model.model.{model_info['layer_prefix']}.{layer_idx}.{peft_module}.lora_B.weight"
-                
-                # Alternative key patterns
-                alt_patterns = [
-                    f"{model_info['layer_prefix']}.{layer_idx}.{peft_module}.lora_A.weight",
-                    f"model.{model_info['layer_prefix']}.{layer_idx}.{peft_module}.lora_A.weight",
-                ]
-                
                 lora_A = None
                 lora_B = None
                 
-                # Try to find LoRA weights
+                # Try to find LoRA weights with more flexible matching
                 for key in peft_weights.keys():
-                    if lora_A_key in key or any(pattern in key for pattern in alt_patterns):
-                        if "lora_A" in key and str(layer_idx) in key and peft_module in key:
+                    # Check if this key contains the module and layer we're looking for
+                    if peft_module in key and str(layer_idx) in key:
+                        if "lora_A" in key:
                             lora_A = peft_weights[key]
-                        elif "lora_B" in key and str(layer_idx) in key and peft_module in key:
+                            logger.debug(f"Found lora_A for {adaptrix_module}: {key}")
+                        elif "lora_B" in key:
                             lora_B = peft_weights[key]
+                            logger.debug(f"Found lora_B for {adaptrix_module}: {key}")
                 
                 # If we found both A and B weights, add to layer weights
                 if lora_A is not None and lora_B is not None:
@@ -375,31 +379,37 @@ class PEFTConverter:
                 'model_type': 'unknown'
             }
     
-    def _create_module_mapping(self, peft_target_modules: List[str], architecture: str) -> Dict[str, str]:
-        """Create mapping from Adaptrix modules to PEFT modules."""
+    def _create_module_mapping(self, peft_target_modules: List[str], architecture: str = None) -> Dict[str, str]:
+        """Create mapping from PEFT modules to Adaptrix modules with better detection."""
         mapping = {}
-        
-        # Common mappings based on architecture
-        if architecture in ["gpt2", "unknown"]:
-            mapping = {
-                'attn.c_attn': 'attn.c_attn',
-                'attn.c_proj': 'attn.c_proj',
-                'mlp.c_fc': 'mlp.c_fc',
-                'mlp.c_proj': 'mlp.c_proj'
-            }
-        elif architecture == "bert":
-            mapping = {
-                'attn.c_attn': 'attention.self.query',  # Map to query for simplicity
-                'mlp.c_fc': 'intermediate.dense'
-            }
-        
-        # Filter by what's actually in PEFT target modules
-        filtered_mapping = {}
-        for adaptrix_module, peft_module in mapping.items():
-            if any(peft_module in target for target in peft_target_modules):
-                filtered_mapping[adaptrix_module] = peft_module
-        
-        return filtered_mapping
+
+        # Analyze the actual PEFT target modules to create mapping
+        for peft_module in peft_target_modules:
+            # Map common patterns to Adaptrix modules
+            if 'q_proj' in peft_module or 'query' in peft_module:
+                mapping['attn.c_attn'] = peft_module
+            elif 'k_proj' in peft_module or 'key' in peft_module:
+                if 'attn.c_attn' not in mapping:  # Only if we don't have q_proj
+                    mapping['attn.c_attn'] = peft_module
+            elif 'v_proj' in peft_module or 'value' in peft_module:
+                if 'attn.c_attn' not in mapping:  # Only if we don't have q_proj/k_proj
+                    mapping['attn.c_attn'] = peft_module
+            elif 'o_proj' in peft_module or ('dense' in peft_module and 'attention' in peft_module):
+                mapping['attn.c_proj'] = peft_module
+            elif 'gate_proj' in peft_module or 'up_proj' in peft_module or 'fc1' in peft_module or ('dense' in peft_module and 'intermediate' in peft_module):
+                mapping['mlp.c_fc'] = peft_module
+            elif 'down_proj' in peft_module or 'fc2' in peft_module or ('dense' in peft_module and 'output' in peft_module):
+                mapping['mlp.c_proj'] = peft_module
+            elif 'attn.c_attn' in peft_module:
+                mapping['attn.c_attn'] = peft_module
+            elif 'attn.c_proj' in peft_module:
+                mapping['attn.c_proj'] = peft_module
+            elif 'mlp.c_fc' in peft_module:
+                mapping['mlp.c_fc'] = peft_module
+            elif 'mlp.c_proj' in peft_module:
+                mapping['mlp.c_proj'] = peft_module
+
+        return mapping
     
     def _redistribute_weights(self, 
                             peft_weights: Dict[str, torch.Tensor], 

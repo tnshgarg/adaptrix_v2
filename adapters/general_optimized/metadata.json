@@ -1,0 +1,15 @@
+{
+  "name": "general_optimized",
+  "version": "1.0.0",
+  "description": "Optimized general conversation adapter",
+  "source": "manual_creation",
+  "base_model": "microsoft/DialoGPT-small",
+  "target_layers": [
+    6
+  ],
+  "target_modules": [
+    "attn.c_attn"
+  ],
+  "rank": 4,
+  "alpha": 8
+}

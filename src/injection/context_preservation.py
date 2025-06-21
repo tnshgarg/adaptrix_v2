@@ -131,7 +131,7 @@ class ContextPreservingInjector:
         # Validate shapes before addition
         if original_context.shape != adapter_output.shape:
             logger.debug(f"Shape mismatch in context blending: context {original_context.shape} vs adapter {adapter_output.shape}")
-            # Skip context preservation and return original context
+            # Skip context preservation and return original context + zero adapter output
             return original_context
 
         # Standard LoRA residual connection

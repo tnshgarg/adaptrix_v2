@@ -109,7 +109,7 @@ def main():
     """Examine multiple real adapters."""
     adapters_to_examine = [
         "tloen/alpaca-lora-7b",
-        "chavinlo/gpt4-x-alpaca",
+        "darshjoshi16/phi2-lora-math",
     ]
     
     for adapter_id in adapters_to_examine:
