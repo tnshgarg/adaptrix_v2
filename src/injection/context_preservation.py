@@ -111,27 +111,29 @@ class ContextPreservingInjector:
         
         return blended_output
     
-    def _blend_with_context(self, 
+    def _blend_with_context(self,
                           original_context: torch.Tensor,
                           adapter_output: torch.Tensor,
                           attention_mask: Optional[torch.Tensor],
                           layer_idx: int) -> torch.Tensor:
         """
         Blend adapter output with original context using sophisticated weighting.
-        
+
         Args:
-            original_context: Original hidden states
-            adapter_output: Adapter transformation output
+            original_context: Original hidden states (module output)
+            adapter_output: Adapter transformation output (should match original_context shape)
             attention_mask: Attention mask
             layer_idx: Current layer index
-            
+
         Returns:
             Blended output with preserved context
         """
-        # Validate shapes before addition
+        # Validate shapes before addition - they should match for proper residual connection
         if original_context.shape != adapter_output.shape:
-            logger.debug(f"Shape mismatch in context blending: context {original_context.shape} vs adapter {adapter_output.shape}")
-            # Skip context preservation and return original context + zero adapter output
+            logger.warning(f"Shape mismatch in context blending at layer {layer_idx}: "
+                         f"original {original_context.shape} vs adapter {adapter_output.shape}")
+            # For mismatched shapes, fall back to standard residual connection
+            # This should not happen if LoRA dimensions are correct
             return original_context
 
         # Standard LoRA residual connection

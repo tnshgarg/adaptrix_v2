@@ -46,7 +46,12 @@ class AdaptrixEngine:
         # State tracking
         self._initialized = False
         self._model_loaded = False
-        
+
+        # Conversation memory
+        self.conversation_history = []
+        self.max_history_length = 10  # Keep last 10 exchanges
+        self.use_conversation_context = True
+
         logger.info("AdaptrixEngine initialized")
 
     @property
@@ -82,6 +87,9 @@ class AdaptrixEngine:
                 
                 # Detect model architecture and set appropriate modules
                 target_layers, target_modules = self._detect_model_architecture(model)
+
+                # Set the detected target modules in the layer injector
+                self.layer_injector.set_target_modules(target_modules)
 
                 for layer_idx in target_layers:
                     for module_name in target_modules:
@@ -142,53 +150,81 @@ class AdaptrixEngine:
         
         return self.dynamic_loader.switch_adapter(old_name, new_name)
     
-    def generate(self, prompt: str, max_length: int = 100, **kwargs) -> str:
+    def generate(self, prompt: str, max_length: int = 100, use_context: bool = None, **kwargs) -> str:
         """
         Generate text using the current model configuration.
-        
+
         Args:
             prompt: Input prompt
-            max_length: Maximum generation length
+            max_length: Maximum generation length (total tokens, not new tokens)
+            use_context: Whether to use conversation context (None for default)
             **kwargs: Additional generation parameters
-            
+
         Returns:
             Generated text
         """
         if not self._check_initialized():
             return ""
-        
+
         try:
             with timer("Text generation"):
-                # Tokenize input
+                # Determine if we should use context
+                if use_context is None:
+                    use_context = self.use_conversation_context
+
+                # Build context-aware prompt
+                if use_context and self.conversation_history:
+                    context_prompt = self._build_context_prompt(prompt)
+                else:
+                    context_prompt = prompt
+
+                # Tokenize input with proper attention mask
                 tokenizer = self.base_model_manager.tokenizer
                 model = self.base_model_manager.model
-                
-                inputs = tokenizer.encode(prompt, return_tensors="pt")
-                inputs = inputs.to(self.base_model_manager.device)
-                
-                # Set generation parameters
+
+                # Proper tokenization with attention mask
+                inputs = tokenizer(context_prompt, return_tensors="pt", padding=True)
+                inputs = {k: v.to(self.base_model_manager.device) for k, v in inputs.items()}
+
+                # Calculate max_new_tokens from max_length
+                input_length = inputs['input_ids'].shape[1]
+                max_new_tokens = max(1, max_length - input_length)
+
+                # Set optimized generation parameters for high quality
                 generation_kwargs = {
-                    'max_length': max_length,
+                    'max_new_tokens': max_new_tokens,  # Generate new tokens, not total length
                     'do_sample': kwargs.get('do_sample', True),
-                    'temperature': kwargs.get('temperature', 0.7),
-                    'top_p': kwargs.get('top_p', 0.9),
+                    'temperature': kwargs.get('temperature', 0.8),  # Slightly higher for creativity
+                    'top_p': kwargs.get('top_p', 0.95),  # Higher for better diversity
+                    'top_k': kwargs.get('top_k', 40),  # Lower for more focused responses
+                    'repetition_penalty': kwargs.get('repetition_penalty', 1.15),  # Higher to reduce repetition
+                    'length_penalty': kwargs.get('length_penalty', 1.0),  # Encourage longer responses
+                    'no_repeat_ngram_size': kwargs.get('no_repeat_ngram_size', 3),  # Prevent 3-gram repetition
                     'pad_token_id': tokenizer.eos_token_id,
-                    **kwargs
+                    'eos_token_id': tokenizer.eos_token_id,
+                    **{k: v for k, v in kwargs.items() if k not in ['do_sample', 'temperature', 'top_p', 'top_k', 'repetition_penalty', 'length_penalty', 'no_repeat_ngram_size']}
                 }
-                
-                # Generate
+
+                # Generate with attention mask
                 with torch.no_grad():
-                    outputs = model.generate(inputs, **generation_kwargs)
-                
-                # Decode output
-                generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-                
-                # Remove input prompt from output
-                if generated_text.startswith(prompt):
-                    generated_text = generated_text[len(prompt):].strip()
-                
-                return generated_text
-                
+                    outputs = model.generate(
+                        inputs['input_ids'],
+                        attention_mask=inputs.get('attention_mask'),
+                        **generation_kwargs
+                    )
+
+                # Decode only the new tokens (exclude input)
+                generated_text = tokenizer.decode(outputs[0][input_length:], skip_special_tokens=True)
+
+                # Post-process for better quality
+                response = self._post_process_response(generated_text.strip())
+
+                # Add to conversation history
+                if use_context:
+                    self._add_to_history(prompt, response)
+
+                return response
+
         except Exception as e:
             logger.error(f"Error during generation: {e}")
             return ""
@@ -436,6 +472,142 @@ class AdaptrixEngine:
             logger.error("Engine not initialized. Call initialize() first.")
             return False
         return True
+
+    def _build_context_prompt(self, current_prompt: str) -> str:
+        """
+        Build a context-aware prompt using conversation history.
+
+        Args:
+            current_prompt: The current user input
+
+        Returns:
+            Context-enhanced prompt
+        """
+        if not self.conversation_history:
+            return current_prompt
+
+        # For single queries without context keywords, don't use context
+        context_keywords = ['what did i', 'my name', 'i told you', 'remember', 'earlier', 'before']
+        if not any(keyword in current_prompt.lower() for keyword in context_keywords):
+            return current_prompt
+
+        # Build context from recent history
+        context_parts = []
+
+        # Add recent exchanges (limit to avoid token overflow)
+        recent_history = self.conversation_history[-2:]  # Last 2 exchanges only
+
+        for exchange in recent_history:
+            context_parts.append(f"Previous: {exchange['user']} -> {exchange['assistant'][:100]}...")
+
+        # Add current prompt
+        context_parts.append(f"Current question: {current_prompt}")
+
+        return "\n".join(context_parts)
+
+    def _add_to_history(self, user_input: str, assistant_response: str) -> None:
+        """
+        Add an exchange to conversation history.
+
+        Args:
+            user_input: User's input
+            assistant_response: Assistant's response
+        """
+        exchange = {
+            'user': user_input,
+            'assistant': assistant_response,
+            'timestamp': time.time()
+        }
+
+        self.conversation_history.append(exchange)
+
+        # Trim history if it gets too long
+        if len(self.conversation_history) > self.max_history_length:
+            self.conversation_history = self.conversation_history[-self.max_history_length:]
+
+    def clear_conversation_history(self) -> None:
+        """Clear the conversation history."""
+        self.conversation_history = []
+        logger.info("Conversation history cleared")
+
+    def get_conversation_history(self) -> List[Dict[str, Any]]:
+        """Get the current conversation history."""
+        return self.conversation_history.copy()
+
+    def set_conversation_context(self, enabled: bool) -> None:
+        """Enable or disable conversation context."""
+        self.use_conversation_context = enabled
+        logger.info(f"Conversation context {'enabled' if enabled else 'disabled'}")
+
+    def _post_process_response(self, response: str) -> str:
+        """
+        Post-process the generated response for better quality.
+
+        Args:
+            response: Raw generated response
+
+        Returns:
+            Cleaned and improved response
+        """
+        if not response:
+            return response
+
+        # Remove common artifacts
+        response = response.strip()
+
+        # Remove incomplete sentences at the end
+        sentences = response.split('.')
+        if len(sentences) > 1 and sentences[-1].strip() and len(sentences[-1].strip()) < 10:
+            # Last sentence is very short, likely incomplete
+            response = '.'.join(sentences[:-1]) + '.'
+
+        # Remove repetitive patterns
+        response = self._remove_repetitive_patterns(response)
+
+        # Clean up formatting
+        response = self._clean_formatting(response)
+
+        # Ensure proper capitalization
+        if response and not response[0].isupper():
+            response = response[0].upper() + response[1:]
+
+        return response
+
+    def _remove_repetitive_patterns(self, text: str) -> str:
+        """Remove repetitive patterns from text."""
+        import re
+
+        # Remove repeated phrases (3+ words repeated)
+        words = text.split()
+        if len(words) < 6:
+            return text
+
+        # Check for repeated 3-word patterns
+        for i in range(len(words) - 5):
+            phrase = ' '.join(words[i:i+3])
+            next_phrase = ' '.join(words[i+3:i+6])
+            if phrase == next_phrase:
+                # Found repetition, truncate
+                return ' '.join(words[:i+3])
+
+        return text
+
+    def _clean_formatting(self, text: str) -> str:
+        """Clean up text formatting."""
+        import re
+
+        # Fix multiple spaces
+        text = re.sub(r'\s+', ' ', text)
+
+        # Fix punctuation spacing
+        text = re.sub(r'\s+([,.!?;:])', r'\1', text)
+        text = re.sub(r'([,.!?;:])\s*([,.!?;:])', r'\1 \2', text)
+
+        # Remove trailing incomplete words
+        if text.endswith(' '):
+            text = text.rstrip()
+
+        return text
     
     def benchmark_adapter(self, adapter_name: str, test_prompts: List[str]) -> Dict[str, Any]:
         """

@@ -76,11 +76,11 @@ class LoRALayer(nn.Module):
 class LayerInjector:
     """
     Manages dynamic LoRA injection into transformer layers.
-    
+
     Uses PyTorch forward hooks to inject LoRA computations into
     specific modules within transformer layers.
     """
-    
+
     def __init__(self, base_model: nn.Module):
         """
         Initialize layer injector.
@@ -103,12 +103,30 @@ class LayerInjector:
         # Target modules cache
         self._target_modules_cache: Optional[Dict[str, torch.nn.Module]] = None
 
+        # Dynamic target modules (set by engine after architecture detection)
+        self.target_modules_list: List[str] = config.get('injection.target_modules', ['attn.c_attn', 'mlp.c_fc'])
+
+        # Registry of injection points for tracking
+        self.injection_points: Dict[int, Dict[str, bool]] = defaultdict(dict)
+
         # Context preservation
         self.context_injector = ContextPreservingInjector(base_model)
         self.enable_context_preservation = config.get('injection.enable_context_preservation', True)
 
         logger.info("LayerInjector initialized with context preservation")
-    
+
+    def set_target_modules(self, target_modules: List[str]) -> None:
+        """
+        Set the target modules for injection (called by engine after architecture detection).
+
+        Args:
+            target_modules: List of target module names
+        """
+        self.target_modules_list = target_modules
+        # Clear cache to force re-detection with new modules
+        self._target_modules_cache = None
+        logger.info(f"Updated target modules: {target_modules}")
+
     def _get_target_modules(self) -> Dict[str, torch.nn.Module]:
         """
         Get target modules for injection.
@@ -131,8 +149,8 @@ class LayerInjector:
         else:
             raise RuntimeError("Could not find transformer layers")
         
-        # Extract target modules from each layer
-        target_module_names = config.get('injection.target_modules', ['attn.c_attn', 'mlp.c_fc'])
+        # Extract target modules from each layer (use dynamically set modules)
+        target_module_names = self.target_modules_list
         
         for layer_idx, layer in enumerate(layers):
             for module_name in target_module_names:
@@ -205,7 +223,10 @@ class LayerInjector:
             hook = self._create_injection_hook(layer_idx, module_name, target_module)
             handle = target_module.register_forward_hook(hook)
             self.hooks[hook_key] = handle
-            
+
+            # Track injection point
+            self.injection_points[layer_idx][module_name] = True
+
             logger.info(f"Registered injection point: layer {layer_idx}, module {module_name}")
             return True
             
@@ -271,25 +292,15 @@ class LayerInjector:
                                 logger.warning(f"LoRA computation failed for {lora_key}: {e}")
                                 continue
 
-                # Apply context preservation if enabled and LoRA was applied
-                if self.enable_context_preservation and lora_applied:
-                    try:
-                        final_output = self.context_injector.inject_with_context(
-                            layer_idx=layer_idx,
-                            input_hidden_states=output,
-                            adapter_output=total_lora_output,
-                            attention_mask=attention_mask
-                        )
-                    except Exception as e:
-                        logger.warning(f"Context preservation failed for layer {layer_idx}: {e}")
-                        # Fallback to standard residual connection
-                        final_output = output + total_lora_output
+                # For now, disable context preservation due to dimension mismatch issues
+                # Context preservation needs to be redesigned to handle per-module injection
+                # rather than per-layer aggregation
+
+                # Standard LoRA residual connection
+                if lora_applied:
+                    final_output = output + total_lora_output
                 else:
-                    # Standard LoRA residual connection
-                    if lora_applied:
-                        final_output = output + total_lora_output
-                    else:
-                        final_output = output
+                    final_output = output
 
                 return final_output
 
@@ -312,7 +323,7 @@ class LayerInjector:
             True if injection successful
         """
         try:
-            target_modules = config.get('injection.target_modules', ['attn.c_attn', 'mlp.c_fc'])
+            target_modules = self.target_modules_list
             
             for module_name in target_modules:
                 # Check if weights exist for this module
@@ -392,7 +403,7 @@ class LayerInjector:
                 del self.active_adapters[layer_idx][adapter_name]
             
             # Remove LoRA layers
-            target_modules = config.get('injection.target_modules', ['attn.c_attn', 'mlp.c_fc'])
+            target_modules = self.target_modules_list
             
             for module_name in target_modules:
                 lora_key = f"{adapter_name}_{layer_idx}_{module_name}"

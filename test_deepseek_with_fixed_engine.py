@@ -143,20 +143,23 @@ def create_deepseek_compatible_adapters():
             layer_weights = {}
             
             # DeepSeek-R1 dimensions: hidden_size=1536, intermediate_size=8960
+            # q_proj: 1536 -> 1536
             layer_weights['self_attn.q_proj'] = {
                 'lora_A': torch.randn(8, 1536) * 0.02,
                 'lora_B': torch.randn(1536, 8) * 0.02,
                 'rank': 8,
                 'alpha': 16
             }
-            
+
+            # v_proj: 1536 -> 256 (attention head dimension)
             layer_weights['self_attn.v_proj'] = {
                 'lora_A': torch.randn(8, 1536) * 0.02,
-                'lora_B': torch.randn(256, 8) * 0.02,  # v_proj has different output
+                'lora_B': torch.randn(256, 8) * 0.02,
                 'rank': 8,
                 'alpha': 16
             }
-            
+
+            # mlp.gate_proj: 1536 -> 8960
             layer_weights['mlp.gate_proj'] = {
                 'lora_A': torch.randn(8, 1536) * 0.02,
                 'lora_B': torch.randn(8960, 8) * 0.02,
@@ -196,6 +199,7 @@ def create_deepseek_compatible_adapters():
         # Create weights for math layers
         for layer_idx in [12, 18]:
             layer_weights = {
+                # mlp.gate_proj: 1536 -> 8960 (correct dimensions)
                 'mlp.gate_proj': {
                     'lora_A': torch.randn(8, 1536) * 0.03,  # Slightly stronger for math
                     'lora_B': torch.randn(8960, 8) * 0.03,
