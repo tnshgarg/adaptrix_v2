@@ -10,12 +10,13 @@ import argparse
 import logging
 from datetime import datetime
 
-# Add src to path
-sys.path.append(os.path.join(os.path.dirname(__file__), '.'))
+# Add project root to path
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, project_root)
 
 from src.training.trainer import train_adapter
-from src.training.config import get_config_for_domain, TrainingConfig
-from convert_peft_to_adaptrix import convert_peft_adapter_to_adaptrix
+from src.training.config import TrainingConfig
+from scripts.convert_peft_to_adaptrix import convert_peft_adapter_to_adaptrix
 
 
 def setup_logging(log_level="INFO"):
@@ -73,7 +74,6 @@ def create_code_adapter(name="code_generation", samples=100, epochs=2, quick=Fal
     print(f"💻 Creating Code Generation Adapter: {name}")
     print("=" * 60)
     
-    # For now, use a simple synthetic dataset since code_alpaca might not be available
     config = TrainingConfig(
         model_name="deepseek-ai/deepseek-r1-distill-qwen-1.5b",
         dataset_name="gsm8k",  # We'll adapt this for code-like problems

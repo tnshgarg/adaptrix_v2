@@ -7,8 +7,9 @@ Demonstrates the full custom LoRA training and adapter injection system.
 import sys
 import os
 
-# Add src to path
-sys.path.append(os.path.join(os.path.dirname(__file__), '.'))
+# Add project root to path
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, project_root)
 
 from src.core.engine import AdaptrixEngine
 
@@ -58,26 +59,30 @@ def demo_complete_system():
     print("-" * 50)
     
     # Load the math adapter
-    math_adapter = "demo_math"  # or "simple_math_test"
-    load_success = engine.load_adapter(math_adapter)
-    
-    if load_success:
-        print(f"✅ Loaded custom adapter: {math_adapter}")
+    math_adapter = adapters[0] if adapters else None
+    if math_adapter:
+        load_success = engine.load_adapter(math_adapter)
         
-        adapter_responses = []
-        for i, problem in enumerate(test_problems, 1):
-            prompt = f"Solve this math problem step by step.\n\nProblem: {problem}\n\nSolution:"
-            response = engine.generate(prompt, max_length=150, temperature=0.7)
-            adapter_responses.append(response)
-            print(f"\n{i}. Problem: {problem}")
-            print(f"   With Adapter: {response[:100]}...")
-        
-        # Unload adapter
-        engine.unload_adapter(math_adapter)
-        print(f"\n✅ Unloaded adapter: {math_adapter}")
-        
+        if load_success:
+            print(f"✅ Loaded custom adapter: {math_adapter}")
+            
+            adapter_responses = []
+            for i, problem in enumerate(test_problems, 1):
+                prompt = f"Solve this math problem step by step.\n\nProblem: {problem}\n\nSolution:"
+                response = engine.generate(prompt, max_length=150, temperature=0.7)
+                adapter_responses.append(response)
+                print(f"\n{i}. Problem: {problem}")
+                print(f"   With Adapter: {response[:100]}...")
+            
+            # Unload adapter
+            engine.unload_adapter(math_adapter)
+            print(f"\n✅ Unloaded adapter: {math_adapter}")
+            
+        else:
+            print(f"❌ Failed to load adapter: {math_adapter}")
+            adapter_responses = baseline_responses
     else:
-        print(f"❌ Failed to load adapter: {math_adapter}")
+        print("❌ No adapters available")
         adapter_responses = baseline_responses
     
     # Compare responses
@@ -171,9 +176,9 @@ def show_training_pipeline():
     print("=" * 50)
     
     print("To train new adapters, use:")
-    print("   python create_adapter.py math --quick --test")
-    print("   python create_adapter.py code --samples 500 --epochs 2")
-    print("   python create_adapter.py all --samples 1000 --epochs 3")
+    print("   python scripts/create_adapter.py math --quick --test")
+    print("   python scripts/create_adapter.py code --samples 500 --epochs 2")
+    print("   python scripts/create_adapter.py all --samples 1000 --epochs 3")
     
     print("\nTo use trained adapters:")
     print("   from src.core.engine import AdaptrixEngine")

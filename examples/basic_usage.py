@@ -7,8 +7,9 @@ import os
 import torch
 
 
-# Add src to path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+# Add project root to path
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, project_root)
 
 from src.core.engine import AdaptrixEngine
 from src.adapters.adapter_manager import AdapterManager

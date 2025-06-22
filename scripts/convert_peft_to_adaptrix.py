@@ -7,10 +7,10 @@ import os
 import torch
 import json
 from safetensors import safe_open
-from pathlib import Path
 
-# Add src to path
-sys.path.append(os.path.join(os.path.dirname(__file__), '.'))
+# Add project root to path
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, project_root)
 
 
 def convert_peft_adapter_to_adaptrix(peft_adapter_path: str, output_path: str = None):
@@ -50,15 +50,7 @@ def convert_peft_adapter_to_adaptrix(peft_adapter_path: str, output_path: str = 
         
         print(f"✅ Loaded {len(weights)} weight tensors")
         
-        # Print weight structure for debugging
-        print("Weight structure:")
-        for key, tensor in weights.items():
-            print(f"  {key}: {tensor.shape}")
-        
         # Extract layer information and create Adaptrix format
-        # PEFT format: "base_model.model.model.layers.{layer}.{module}.lora_{A/B}.weight"
-        # Adaptrix format: layer files with module weights
-        
         layer_weights = {}
         target_layers = set()
         
@@ -174,6 +166,8 @@ def test_converted_adapter(adapter_path: str):
         
     except Exception as e:
         print(f"❌ Test failed: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
@@ -182,18 +176,23 @@ def main():
     print("🎯 PEFT TO ADAPTRIX CONVERTER")
     print("=" * 60)
     
-    adapter_path = "adapters/simple_math_test"
+    import argparse
+    parser = argparse.ArgumentParser(description="Convert PEFT adapter to Adaptrix format")
+    parser.add_argument("adapter_path", help="Path to PEFT adapter directory")
+    parser.add_argument("--test", action="store_true", help="Test converted adapter")
     
-    if not os.path.exists(adapter_path):
-        print(f"❌ Adapter path not found: {adapter_path}")
+    args = parser.parse_args()
+    
+    if not os.path.exists(args.adapter_path):
+        print(f"❌ Adapter path not found: {args.adapter_path}")
         return
     
     # Convert the adapter
-    success = convert_peft_adapter_to_adaptrix(adapter_path)
+    success = convert_peft_adapter_to_adaptrix(args.adapter_path)
     
-    if success:
+    if success and args.test:
         # Test the converted adapter
-        test_success = test_converted_adapter(adapter_path)
+        test_success = test_converted_adapter(args.adapter_path)
         
         print(f"\n" + "=" * 60)
         print(f"🎊 CONVERSION RESULTS")
@@ -202,14 +201,11 @@ def main():
         print(f"✅ Integration: {'SUCCESS' if test_success else 'FAILED'}")
         
         if success and test_success:
-            print(f"\n🎊 MATH ADAPTER FULLY CONVERTED AND WORKING!")
-            print(f"✅ PEFT adapter converted to Adaptrix format")
-            print(f"✅ Adapter loads and works with Adaptrix system")
-            print(f"✅ Custom training pipeline complete!")
+            print(f"\n🎊 ADAPTER FULLY CONVERTED AND WORKING!")
         else:
             print(f"\n⚠️  Conversion completed but integration issues remain")
     else:
-        print(f"\n❌ Conversion failed")
+        print(f"\n{'✅ SUCCESS' if success else '❌ FAILED'}: Conversion completed")
     
     print("=" * 60)
 
