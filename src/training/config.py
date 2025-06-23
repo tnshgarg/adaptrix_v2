@@ -15,13 +15,12 @@ class LoRAConfig:
     alpha: int = 32  # LoRA alpha (scaling factor)
     dropout: float = 0.1  # LoRA dropout
     target_modules: List[str] = field(default_factory=lambda: [
-        "self_attn.q_proj",
-        "self_attn.v_proj", 
-        "self_attn.k_proj",
-        "self_attn.o_proj",
-        "mlp.gate_proj",
-        "mlp.up_proj",
-        "mlp.down_proj"
+        "q_proj",
+        "v_proj",
+        "k_proj",
+        "dense",
+        "fc1",
+        "fc2"
     ])
     bias: str = "none"  # Bias type: "none", "all", "lora_only"
     task_type: str = "CAUSAL_LM"  # Task type for PEFT
@@ -32,7 +31,7 @@ class TrainingConfig:
     """Comprehensive training configuration."""
     
     # Model and data
-    model_name: str = "deepseek-ai/deepseek-r1-distill-qwen-1.5b"
+    model_name: str = "microsoft/phi-2"
     dataset_name: str = "gsm8k"
     dataset_config: Optional[str] = "main"
     

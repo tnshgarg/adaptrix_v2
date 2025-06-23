@@ -10,6 +10,7 @@ from ..models.base_model import BaseModelManager
 from ..injection.layer_injector import LayerInjector
 from ..adapters.adapter_manager import AdapterManager
 from ..core.dynamic_loader import DynamicLoader
+from ..composition.adapter_composer import AdapterComposer, CompositionStrategy
 from ..utils.config import config
 from ..utils.helpers import timer, get_memory_info
 
@@ -42,6 +43,7 @@ class AdaptrixEngine:
         # These will be initialized after model loading
         self.layer_injector: Optional[LayerInjector] = None
         self.dynamic_loader: Optional[DynamicLoader] = None
+        self.adapter_composer: Optional[AdapterComposer] = None
         
         # State tracking
         self._initialized = False
@@ -84,6 +86,10 @@ class AdaptrixEngine:
                 # Initialize dynamic loader
                 logger.info("Initializing dynamic loader...")
                 self.dynamic_loader = DynamicLoader(self.layer_injector, self.adapter_manager)
+
+                # Initialize adapter composer
+                logger.info("Initializing adapter composer...")
+                self.adapter_composer = AdapterComposer(self.layer_injector, self.adapter_manager)
                 
                 # Detect model architecture and set appropriate modules
                 target_layers, target_modules = self._detect_model_architecture(model)
@@ -190,20 +196,27 @@ class AdaptrixEngine:
                 input_length = inputs['input_ids'].shape[1]
                 max_new_tokens = max(1, max_length - input_length)
 
-                # Set optimized generation parameters for high quality
+                # Set optimized generation parameters for Phi-2 compatibility
                 generation_kwargs = {
                     'max_new_tokens': max_new_tokens,  # Generate new tokens, not total length
                     'do_sample': kwargs.get('do_sample', True),
-                    'temperature': kwargs.get('temperature', 0.8),  # Slightly higher for creativity
-                    'top_p': kwargs.get('top_p', 0.95),  # Higher for better diversity
-                    'top_k': kwargs.get('top_k', 40),  # Lower for more focused responses
-                    'repetition_penalty': kwargs.get('repetition_penalty', 1.15),  # Higher to reduce repetition
-                    'length_penalty': kwargs.get('length_penalty', 1.0),  # Encourage longer responses
-                    'no_repeat_ngram_size': kwargs.get('no_repeat_ngram_size', 3),  # Prevent 3-gram repetition
                     'pad_token_id': tokenizer.eos_token_id,
                     'eos_token_id': tokenizer.eos_token_id,
-                    **{k: v for k, v in kwargs.items() if k not in ['do_sample', 'temperature', 'top_p', 'top_k', 'repetition_penalty', 'length_penalty', 'no_repeat_ngram_size']}
                 }
+
+                # Add compatible generation parameters for Phi-2
+                if kwargs.get('do_sample', True):
+                    # Only add sampling parameters if do_sample is True
+                    if 'temperature' in kwargs:
+                        generation_kwargs['temperature'] = kwargs['temperature']
+                    if 'top_p' in kwargs:
+                        generation_kwargs['top_p'] = kwargs['top_p']
+                    if 'top_k' in kwargs:
+                        generation_kwargs['top_k'] = kwargs['top_k']
+
+                # Add other compatible parameters
+                if 'repetition_penalty' in kwargs:
+                    generation_kwargs['repetition_penalty'] = kwargs['repetition_penalty']
 
                 # Generate with attention mask
                 with torch.no_grad():
@@ -321,11 +334,202 @@ class AdaptrixEngine:
             status['available_adapters'] = self.list_adapters()
             status['memory_usage'] = self.dynamic_loader.get_memory_usage()
             status['active_injection_points'] = self.layer_injector.get_active_adapters()
-        
+
+            # Add composition system status
+            if self.adapter_composer:
+                status['composition_stats'] = self.adapter_composer.get_composition_stats()
+
         # Add system memory info
         status['system_memory'] = get_memory_info()
-        
+
         return status
+
+    # Revolutionary Multi-Adapter Composition Methods
+
+    def compose_adapters(self,
+                        adapters: List[str],
+                        strategy: Optional[CompositionStrategy] = None,
+                        **kwargs) -> Dict[str, Any]:
+        """
+        🚀 REVOLUTIONARY FEATURE: Compose multiple adapters for enhanced intelligence.
+
+        This is the core innovation that sets Adaptrix apart - the ability to combine
+        multiple specialized adapters in sophisticated ways to create emergent capabilities.
+
+        Args:
+            adapters: List of adapter names to compose
+            strategy: Composition strategy (auto-selected if None)
+            **kwargs: Additional composition parameters
+
+        Returns:
+            Dictionary with composition results and metadata
+        """
+        if not self._check_initialized():
+            return {'error': 'Engine not initialized'}
+
+        if not self.adapter_composer:
+            return {'error': 'Adapter composer not available'}
+
+        try:
+            # Load all requested adapters
+            loaded_adapters = []
+            for adapter_name in adapters:
+                if self.load_adapter(adapter_name):
+                    loaded_adapters.append(adapter_name)
+                else:
+                    logger.warning(f"Failed to load adapter {adapter_name}")
+
+            if not loaded_adapters:
+                return {'error': 'No adapters could be loaded'}
+
+            # Perform composition
+            result = self.adapter_composer.compose_adapters(loaded_adapters, strategy, kwargs)
+
+            return {
+                'success': True,
+                'strategy': result.strategy_used.value,
+                'adapters_used': loaded_adapters,
+                'confidence': result.confidence_scores,
+                'weights': result.composition_weights,
+                'processing_time': result.processing_time,
+                'metadata': result.metadata
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to compose adapters: {e}")
+            return {'error': str(e)}
+
+    def generate_with_composition(self,
+                                 prompt: str,
+                                 adapters: List[str],
+                                 strategy: Optional[CompositionStrategy] = None,
+                                 max_length: int = 100,
+                                 temperature: float = 0.7,
+                                 **kwargs) -> str:
+        """
+        🚀 Generate text using multi-adapter composition for enhanced capabilities.
+
+        This method showcases the revolutionary power of Adaptrix by combining
+        multiple specialized adapters during text generation.
+
+        Args:
+            prompt: Input prompt
+            adapters: List of adapters to compose
+            strategy: Composition strategy
+            max_length: Maximum generation length
+            temperature: Generation temperature
+            **kwargs: Additional generation parameters
+
+        Returns:
+            Generated text with enhanced capabilities
+        """
+        if not self._check_initialized():
+            return "Error: Engine not initialized"
+
+        try:
+            # Set up composition
+            composition_result = self.compose_adapters(adapters, strategy, **kwargs)
+
+            if not composition_result.get('success'):
+                logger.warning(f"Composition failed: {composition_result.get('error')}")
+                # Fallback to single adapter or base model
+                if adapters:
+                    self.load_adapter(adapters[0])
+                return self.generate(prompt, max_length, temperature)
+
+            # Generate with composed adapters
+            logger.info(f"Generating with {len(adapters)} composed adapters using {composition_result['strategy']} strategy")
+
+            # The actual generation happens with all adapters active
+            # The composition system has already set up the optimal combination
+            generated_text = self.generate(prompt, max_length, temperature)
+
+            # Add composition metadata to the response
+            composition_info = f"\n\n[Composed using {composition_result['strategy']} strategy with {len(adapters)} adapters]"
+
+            return generated_text + composition_info
+
+        except Exception as e:
+            logger.error(f"Failed to generate with composition: {e}")
+            return f"Error: {str(e)}"
+
+    def get_composition_recommendations(self,
+                                      available_adapters: Optional[List[str]] = None,
+                                      task_context: Optional[str] = None) -> Dict[str, Any]:
+        """
+        🚀 Get intelligent recommendations for adapter composition.
+
+        Args:
+            available_adapters: List of available adapters (None for all)
+            task_context: Context about the task to optimize for
+
+        Returns:
+            Dictionary with composition recommendations
+        """
+        if not self._check_initialized() or not self.adapter_composer:
+            return {'error': 'System not ready'}
+
+        try:
+            if available_adapters is None:
+                available_adapters = self.list_adapters()
+
+            recommendations = {}
+
+            # Get recommendations for different numbers of adapters
+            for num_adapters in [2, 3, 4, 5]:
+                if len(available_adapters) >= num_adapters:
+                    # Select top adapters (could be enhanced with more sophisticated selection)
+                    selected_adapters = available_adapters[:num_adapters]
+
+                    # Get strategy recommendation
+                    recommended_strategy = self.adapter_composer.recommend_composition_strategy(selected_adapters)
+
+                    recommendations[f"{num_adapters}_adapters"] = {
+                        'adapters': selected_adapters,
+                        'strategy': recommended_strategy.value,
+                        'expected_benefits': self._describe_composition_benefits(selected_adapters, recommended_strategy)
+                    }
+
+            return {
+                'success': True,
+                'recommendations': recommendations,
+                'total_available_adapters': len(available_adapters),
+                'composition_stats': self.adapter_composer.get_composition_stats()
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to get composition recommendations: {e}")
+            return {'error': str(e)}
+
+    def _describe_composition_benefits(self,
+                                     adapters: List[str],
+                                     strategy: CompositionStrategy) -> List[str]:
+        """Describe the expected benefits of a composition."""
+        benefits = []
+
+        if len(adapters) >= 2:
+            benefits.append("Enhanced reasoning through multi-adapter collaboration")
+
+        if strategy == CompositionStrategy.PARALLEL:
+            benefits.append("Simultaneous processing for comprehensive analysis")
+        elif strategy == CompositionStrategy.SEQUENTIAL:
+            benefits.append("Step-by-step refinement through adapter pipeline")
+        elif strategy == CompositionStrategy.HIERARCHICAL:
+            benefits.append("Structured processing with specialized stages")
+        elif strategy == CompositionStrategy.ATTENTION:
+            benefits.append("Dynamic weighting based on context relevance")
+
+        # Add adapter-specific benefits
+        for adapter_name in adapters:
+            adapter_data = self.adapter_manager.load_adapter(adapter_name)
+            if adapter_data and 'metadata' in adapter_data:
+                description = adapter_data['metadata'].get('description', '')
+                if 'math' in description.lower():
+                    benefits.append("Mathematical reasoning enhancement")
+                elif 'code' in description.lower():
+                    benefits.append("Programming and logic improvement")
+
+        return benefits
     
     def cleanup(self) -> None:
         """Clean up resources and unload everything."""
@@ -381,17 +585,27 @@ class AdaptrixEngine:
 
             # Determine target modules based on architecture
             if model_type in ['qwen2', 'qwen']:
-                # Qwen/DeepSeek architecture
-                target_modules = ['self_attn.q_proj', 'self_attn.v_proj', 'mlp.gate_proj']
-                logger.info("Using Qwen2/DeepSeek module names")
+                # Qwen/DeepSeek architecture - USE ALL MODULES FOR MAXIMUM ADAPTER POWER
+                target_modules = [
+                    'self_attn.q_proj', 'self_attn.v_proj', 'self_attn.k_proj', 'self_attn.o_proj',
+                    'mlp.gate_proj', 'mlp.up_proj', 'mlp.down_proj'
+                ]
+                logger.info("Using Qwen2/DeepSeek module names - ALL 7 MODULES FOR MAXIMUM POWER")
             elif model_type in ['llama', 'mistral']:
-                # LLaMA/Mistral architecture
-                target_modules = ['self_attn.q_proj', 'self_attn.v_proj', 'mlp.gate_proj']
-                logger.info("Using LLaMA/Mistral module names")
+                # LLaMA/Mistral architecture - USE ALL MODULES FOR MAXIMUM ADAPTER POWER
+                target_modules = [
+                    'self_attn.q_proj', 'self_attn.v_proj', 'self_attn.k_proj', 'self_attn.o_proj',
+                    'mlp.gate_proj', 'mlp.up_proj', 'mlp.down_proj'
+                ]
+                logger.info("Using LLaMA/Mistral module names - ALL 7 MODULES FOR MAXIMUM POWER")
             elif model_type in ['gpt2', 'gpt_neox']:
                 # GPT-2 style architecture
                 target_modules = ['attn.c_attn', 'mlp.c_fc']
                 logger.info("Using GPT-2 module names")
+            elif model_type == 'phi':
+                # Phi-2 architecture - CORRECT MODULE NAMES
+                target_modules = ['self_attn.q_proj', 'self_attn.v_proj', 'self_attn.k_proj', 'self_attn.dense', 'mlp.fc1', 'mlp.fc2']
+                logger.info("Using Phi-2 module names - CORRECTED")
             else:
                 # Try to detect by examining the model structure
                 logger.info(f"Unknown model type {model_type}, attempting auto-detection")

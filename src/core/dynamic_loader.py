@@ -133,7 +133,7 @@ class DynamicLoader:
             try:
                 if adapter_name not in self._loaded_adapters:
                     logger.warning(f"Adapter {adapter_name} not currently loaded")
-                    return True
+                    return False
                 
                 with timer(f"Unloading adapter {adapter_name}"):
                     # Remove from each layer
