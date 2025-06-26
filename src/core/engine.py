@@ -6,8 +6,8 @@ import logging
 import time
 import torch
 from typing import Dict, List, Optional, Any
-from ..models.base_model import BaseModelManager
-from ..injection.layer_injector import LayerInjector
+from .base_model import BaseModelManager
+from .layer_injector import LayerInjector
 from ..adapters.adapter_manager import AdapterManager
 from ..core.dynamic_loader import DynamicLoader
 from ..composition.adapter_composer import AdapterComposer, CompositionStrategy
@@ -156,7 +156,7 @@ class AdaptrixEngine:
         
         return self.dynamic_loader.switch_adapter(old_name, new_name)
     
-    def generate(self, prompt: str, max_length: int = 100, use_context: bool = None, **kwargs) -> str:
+    def generate(self, prompt: str, max_length: int = 100, use_context: bool = None, stream: bool = False, **kwargs) -> str:
         """
         Generate text using the current model configuration.
 
@@ -178,59 +178,100 @@ class AdaptrixEngine:
                 if use_context is None:
                     use_context = self.use_conversation_context
 
+                # Apply domain-specific prompt engineering
+                enhanced_prompt = self._apply_domain_prompt_engineering(prompt)
+
                 # Build context-aware prompt
                 if use_context and self.conversation_history:
-                    context_prompt = self._build_context_prompt(prompt)
+                    context_prompt = self._build_context_prompt(enhanced_prompt)
                 else:
-                    context_prompt = prompt
+                    context_prompt = enhanced_prompt
 
                 # Tokenize input with proper attention mask
                 tokenizer = self.base_model_manager.tokenizer
                 model = self.base_model_manager.model
 
-                # Proper tokenization with attention mask
-                inputs = tokenizer(context_prompt, return_tensors="pt", padding=True)
+                # Proper tokenization with robust encoding handling
+                inputs = tokenizer(
+                    context_prompt,
+                    return_tensors="pt",
+                    padding=True,
+                    truncation=True,
+                    max_length=512,
+                    add_special_tokens=True,
+                    return_attention_mask=True
+                )
                 inputs = {k: v.to(self.base_model_manager.device) for k, v in inputs.items()}
+
+                # Validate tokenization
+                if inputs['input_ids'].shape[1] == 0:
+                    logger.error("Empty tokenization result")
+                    return "Error: Failed to tokenize input"
 
                 # Calculate max_new_tokens from max_length
                 input_length = inputs['input_ids'].shape[1]
-                max_new_tokens = max(1, max_length - input_length)
+                max_new_tokens = max(10, max_length - input_length)  # Ensure minimum generation
 
-                # Set optimized generation parameters for Phi-2 compatibility
+                # Gemini-level generation parameters for complete, structured responses
                 generation_kwargs = {
-                    'max_new_tokens': max_new_tokens,  # Generate new tokens, not total length
-                    'do_sample': kwargs.get('do_sample', True),
-                    'pad_token_id': tokenizer.eos_token_id,
+                    'max_new_tokens': max(256, max_new_tokens),  # Ensure sufficient length for complete responses
+                    'min_new_tokens': kwargs.get('min_new_tokens', 20),  # Minimum for meaningful content
+                    'do_sample': kwargs.get('do_sample', True),  # Use sampling for natural responses
+                    'temperature': kwargs.get('temperature', 0.7),  # Balanced creativity and accuracy
+                    'top_p': kwargs.get('top_p', 0.9),  # Nucleus sampling for quality
+                    'top_k': kwargs.get('top_k', 50),  # Top-k for diversity
+                    'pad_token_id': tokenizer.pad_token_id or tokenizer.eos_token_id,
                     'eos_token_id': tokenizer.eos_token_id,
+                    'repetition_penalty': kwargs.get('repetition_penalty', 1.2),  # Prevent repetition
+                    'length_penalty': kwargs.get('length_penalty', 1.0),  # Encourage completeness
+                    'no_repeat_ngram_size': 3,  # Prevent repetitive patterns
                 }
-
-                # Add compatible generation parameters for Phi-2
-                if kwargs.get('do_sample', True):
-                    # Only add sampling parameters if do_sample is True
-                    if 'temperature' in kwargs:
-                        generation_kwargs['temperature'] = kwargs['temperature']
-                    if 'top_p' in kwargs:
-                        generation_kwargs['top_p'] = kwargs['top_p']
-                    if 'top_k' in kwargs:
-                        generation_kwargs['top_k'] = kwargs['top_k']
-
-                # Add other compatible parameters
-                if 'repetition_penalty' in kwargs:
-                    generation_kwargs['repetition_penalty'] = kwargs['repetition_penalty']
 
                 # Generate with attention mask
                 with torch.no_grad():
+                    if stream:
+                        # Streaming generation for better UX
+                        print("🤖 Generating response", end="", flush=True)
+
                     outputs = model.generate(
                         inputs['input_ids'],
                         attention_mask=inputs.get('attention_mask'),
                         **generation_kwargs
                     )
 
-                # Decode only the new tokens (exclude input)
-                generated_text = tokenizer.decode(outputs[0][input_length:], skip_special_tokens=True)
+                    if stream:
+                        print(" ✅")
 
-                # Post-process for better quality
-                response = self._post_process_response(generated_text.strip())
+                # Robust decoding with error handling
+                try:
+                    new_tokens = outputs[0][input_length:]
+
+                    # Log token info for debugging
+                    logger.debug(f"Generated {len(new_tokens)} new tokens")
+
+                    # Safe decoding with fallback
+                    try:
+                        generated_text = tokenizer.decode(
+                            new_tokens,
+                            skip_special_tokens=True,
+                            clean_up_tokenization_spaces=True,
+                            errors="replace"  # Replace invalid characters instead of failing
+                        )
+                    except UnicodeDecodeError as e:
+                        logger.warning(f"Unicode decode error: {e}, using fallback")
+                        generated_text = tokenizer.decode(new_tokens, skip_special_tokens=True, errors="ignore")
+
+                    # Validate decoded text
+                    if not generated_text or len(generated_text.strip()) == 0:
+                        logger.warning("Empty generation result")
+                        generated_text = "I apologize, but I couldn't generate a proper response."
+
+                    # Apply Gemini-level post-processing
+                    response = self._post_process_response_gemini_style(generated_text.strip(), context_prompt)
+
+                except Exception as e:
+                    logger.error(f"Decoding failed: {e}")
+                    response = "Error: Failed to decode response properly."
 
                 # Add to conversation history
                 if use_context:
@@ -427,8 +468,11 @@ class AdaptrixEngine:
             return "Error: Engine not initialized"
 
         try:
-            # Set up composition
-            composition_result = self.compose_adapters(adapters, strategy, **kwargs)
+            # Set up composition (filter out generation-specific kwargs)
+            composition_kwargs = {k: v for k, v in kwargs.items()
+                                if k in ['weights', 'confidence_threshold', 'max_adapters',
+                                        'enable_conflict_resolution', 'enable_attention_weighting']}
+            composition_result = self.compose_adapters(adapters, strategy, **composition_kwargs)
 
             if not composition_result.get('success'):
                 logger.warning(f"Composition failed: {composition_result.get('error')}")
@@ -573,15 +617,8 @@ class AdaptrixEngine:
 
             logger.info(f"Detected model type: {model_type}, layers: {num_layers}")
 
-            # Calculate target layers based on model size
-            if num_layers <= 12:
-                target_layers = [3, 6, 9]
-            elif num_layers <= 24:
-                target_layers = [6, 12, 18]
-            else:
-                # For larger models, spread across more layers
-                step = num_layers // 4
-                target_layers = [step, step * 2, step * 3]
+            # Use ALL layers for maximum adapter compatibility
+            target_layers = list(range(num_layers))
 
             # Determine target modules based on architecture
             if model_type in ['qwen2', 'qwen']:
@@ -687,6 +724,31 @@ class AdaptrixEngine:
             return False
         return True
 
+    def _apply_domain_prompt_engineering(self, prompt: str) -> str:
+        """Apply Gemini-style structured prompt engineering."""
+        try:
+            from .prompt_templates import PromptTemplateManager
+
+            # Get current adapter info
+            current_adapter = None
+            if hasattr(self, 'dynamic_loader') and self.dynamic_loader:
+                loaded_adapters = self.dynamic_loader.get_loaded_adapters()
+                if loaded_adapters:
+                    current_adapter = list(loaded_adapters.keys())[0]  # Get first loaded adapter
+
+            # Get structured prompt using template manager
+            structured_prompt = PromptTemplateManager.get_structured_prompt(
+                task=prompt,
+                adapter_name=current_adapter
+            )
+
+            logger.debug(f"Applied structured prompt template for adapter: {current_adapter}")
+            return structured_prompt
+
+        except Exception as e:
+            logger.warning(f"Structured prompt engineering failed: {e}")
+            return prompt
+
     def _build_context_prompt(self, current_prompt: str) -> str:
         """
         Build a context-aware prompt using conversation history.
@@ -753,27 +815,278 @@ class AdaptrixEngine:
         self.use_conversation_context = enabled
         logger.info(f"Conversation context {'enabled' if enabled else 'disabled'}")
 
-    def _post_process_response(self, response: str) -> str:
+    def _post_process_response_gemini_style(self, response: str, original_prompt: str = "") -> str:
         """
-        Post-process the generated response for better quality.
+        Gemini-style post-processing for high-quality, structured responses.
+        """
+        try:
+            from .prompt_templates import PromptTemplateManager, ResponseFormatter
+
+            if not response:
+                return "I apologize, but I couldn't generate a response."
+
+            # First, handle encoding issues robustly
+            response = self._clean_encoding_issues(response)
+
+            # Determine domain for formatting
+            current_adapter = None
+            if hasattr(self, 'dynamic_loader') and self.dynamic_loader:
+                loaded_adapters = self.dynamic_loader.get_loaded_adapters()
+                if loaded_adapters:
+                    current_adapter = list(loaded_adapters.keys())[0]
+
+            # Map adapter to domain
+            adapter_domain_map = {
+                'math_specialist': 'mathematics',
+                'news_specialist': 'journalism',
+                'code_specialist': 'programming'
+            }
+            domain = adapter_domain_map.get(current_adapter, 'general')
+
+            # Remove template artifacts and clean up
+            response = self._remove_template_artifacts(response)
+
+            # Apply domain-specific formatting
+            response = ResponseFormatter.format_response(response, domain)
+
+            # Final quality checks
+            response = self._final_quality_polish(response, domain)
+
+            return response
+
+        except Exception as e:
+            logger.error(f"Gemini-style post-processing failed: {e}")
+            return self._post_process_response(response, original_prompt)
+
+    def _clean_encoding_issues(self, response: str) -> str:
+        """Clean encoding and corruption issues."""
+        try:
+            # Ensure proper UTF-8 encoding
+            if isinstance(response, bytes):
+                response = response.decode('utf-8', errors='replace')
+
+            # Remove null characters and problematic characters
+            response = response.replace('\x00', '').replace('\ufffd', '').replace('�', '')
+
+            # Remove excessive whitespace
+            response = ' '.join(response.split())
+
+            # Check for corruption (too many special characters)
+            if len(response) > 0:
+                special_char_ratio = sum(1 for c in response if not c.isalnum() and c not in ' .,!?-:;()[]{}"\n') / len(response)
+                if special_char_ratio > 0.4:  # More than 40% special characters
+                    logger.warning("Response appears heavily corrupted")
+                    return "I apologize, but the response appears to be corrupted. Please try again."
+
+            return response.strip()
+
+        except Exception as e:
+            logger.error(f"Encoding cleanup failed: {e}")
+            return "Error: Response contains invalid characters."
+
+    def _remove_template_artifacts(self, response: str) -> str:
+        """Remove template artifacts and training data leakage."""
+        # Remove common template artifacts
+        artifacts = [
+            'You are a helpful',
+            'Task:',
+            'Instructions:',
+            'Now, solve this',
+            'Now, write the',
+            'Now, generate',
+            'Now, provide',
+            'Here is the step-by-step solution:',
+            'Here is the news report:',
+            'Here is the Python code:',
+            'Here is the response:',
+        ]
+
+        for artifact in artifacts:
+            if response.startswith(artifact):
+                response = response[len(artifact):].strip()
+
+        # Remove training data artifacts
+        training_artifacts = [
+            'Output:',
+            'Input:',
+            'Answer:',
+            'Solution:',
+            'Response:',
+            'Exercise',
+            'Problem',
+            'Example',
+        ]
+
+        for artifact in training_artifacts:
+            if response.startswith(artifact):
+                response = response[len(artifact):].strip()
+
+        return response
+
+    def _final_quality_polish(self, response: str, domain: str) -> str:
+        """Apply final quality polish for professional output."""
+        if not response:
+            return response
+
+        # Ensure proper capitalization
+        if response and not response[0].isupper() and not response[0].isdigit() and response[0] != '`':
+            response = response[0].upper() + response[1:]
+
+        # Domain-specific polish
+        if domain == 'programming':
+            # Ensure code blocks are properly formatted
+            if 'def ' in response and '```' not in response:
+                response = f"```python\n{response}\n```"
+
+        elif domain == 'journalism':
+            # Ensure proper news structure
+            if not response.startswith('#') and len(response.split('\n')[0]) < 100:
+                lines = response.split('\n')
+                if lines[0]:
+                    lines[0] = f"# {lines[0]}"
+                    response = '\n'.join(lines)
+
+        elif domain == 'mathematics':
+            # Ensure clear mathematical presentation
+            if '=' in response and 'Step' not in response:
+                # Add step structure if missing
+                lines = response.split('\n')
+                formatted_lines = []
+                step_count = 1
+
+                for line in lines:
+                    line = line.strip()
+                    if '=' in line and len(line) > 5:
+                        formatted_lines.append(f"Step {step_count}: {line}")
+                        step_count += 1
+                    elif line:
+                        formatted_lines.append(line)
+
+                if formatted_lines:
+                    response = '\n'.join(formatted_lines)
+
+        # Ensure proper ending
+        if response and not response.endswith(('.', '!', '?', ':', '```', '"')):
+            response += '.'
+
+        return response
+
+    def _post_process_response(self, response: str, original_prompt: str = "") -> str:
+        """
+        Post-process the generated response for better quality and completeness.
 
         Args:
             response: Raw generated response
+            original_prompt: Original prompt for context
 
         Returns:
             Cleaned and improved response
         """
         if not response:
-            return response
+            return "I apologize, but I couldn't generate a response."
 
-        # Remove common artifacts
+        # First, handle encoding issues
+        try:
+            # Ensure proper UTF-8 encoding
+            if isinstance(response, bytes):
+                response = response.decode('utf-8', errors='replace')
+
+            # Remove null characters and other problematic characters
+            response = response.replace('\x00', '').replace('\ufffd', '')
+
+            # Remove excessive whitespace and newlines
+            response = ' '.join(response.split())
+
+        except Exception as e:
+            logger.warning(f"Encoding cleanup failed: {e}")
+            return "Error: Response contains invalid characters."
+
+        # Remove common artifacts and prefixes
         response = response.strip()
+
+        # Check for completely garbled output (too many special characters)
+        special_char_ratio = sum(1 for c in response if not c.isalnum() and c not in ' .,!?-:;()[]{}') / max(len(response), 1)
+        if special_char_ratio > 0.3:  # More than 30% special characters
+            logger.warning("Response appears corrupted (too many special characters)")
+            return "I apologize, but the response appears to be corrupted. Please try again."
+
+        # Comprehensive list of training artifacts to remove
+        artifacts_to_remove = [
+            '<|question_end|>',
+            '<|answer_start|>',
+            '<|endoftext|>',
+            '<|im_start|>',
+            '<|im_end|>',
+            '## INPUT',
+            '## OUTPUT',
+            'INPUT:',
+            'OUTPUT:',
+            'Answer:',
+            'Response:',
+            'Solution:',
+            'ANSWER:',
+            'Question:',
+            'Exercise',
+            'Problem',
+            'Example',
+            'S. ',
+            '. ',
+            'Feel free to add more information!',
+            'Here is the',
+            'Here are the',
+            'The answer is',
+            'The solution is',
+        ]
+
+        # Remove artifacts from the beginning
+        original_response = response
+        for artifact in artifacts_to_remove:
+            if response.lower().startswith(artifact.lower()):
+                response = response[len(artifact):].strip()
+                break
+
+        # If response starts with a number followed by a period (like "120."), remove it
+        import re
+        response = re.sub(r'^\d+\.\s*', '', response)
+
+        # Remove code blocks and programming artifacts
+        response = re.sub(r'```[\s\S]*?```', '', response)  # Remove code blocks
+        response = re.sub(r'print\([^)]*\)', '', response)  # Remove print statements
+        response = re.sub(r'def\s+\w+\([^)]*\):', '', response)  # Remove function definitions
+
+        # Clean up multiple spaces and newlines
+        response = re.sub(r'\s+', ' ', response)
+        response = response.strip()
+
+        # If response is too short or empty after cleaning, try to extract meaningful content
+        if len(response) < 10:
+            # Look for the first meaningful sentence in the original response
+            sentences = original_response.split('.')
+            for sentence in sentences:
+                sentence = sentence.strip()
+                if (len(sentence) > 10 and
+                    not any(artifact.lower() in sentence.lower() for artifact in artifacts_to_remove[:10]) and
+                    not re.match(r'^\d+\s', sentence)):
+                    response = sentence
+                    break
+
+        # Remove incomplete fragments at the beginning
+        if response and not response[0].isupper() and not response[0].isdigit() and response[0] != '"':
+            # Find the first complete sentence
+            sentences = response.split('.')
+            if len(sentences) > 1:
+                for i, sentence in enumerate(sentences):
+                    sentence = sentence.strip()
+                    if sentence and (sentence[0].isupper() or sentence[0].isdigit() or sentence[0] == '"'):
+                        response = '.'.join(sentences[i:])
+                        break
 
         # Remove incomplete sentences at the end
         sentences = response.split('.')
-        if len(sentences) > 1 and sentences[-1].strip() and len(sentences[-1].strip()) < 10:
-            # Last sentence is very short, likely incomplete
-            response = '.'.join(sentences[:-1]) + '.'
+        if len(sentences) > 1 and sentences[-1].strip() and len(sentences[-1].strip()) < 20:
+            response = '.'.join(sentences[:-1])
+            if response and not response.endswith('.'):
+                response += '.'
 
         # Remove repetitive patterns
         response = self._remove_repetitive_patterns(response)
@@ -782,8 +1095,15 @@ class AdaptrixEngine:
         response = self._clean_formatting(response)
 
         # Ensure proper capitalization
-        if response and not response[0].isupper():
+        if response and not response[0].isupper() and not response[0].isdigit() and response[0] != '"':
             response = response[0].upper() + response[1:]
+
+        # Ensure response ends properly
+        if response and not response.endswith(('.', '!', '?', ':', ';', '"')):
+            response += '.'
+
+        # Final cleanup - remove any remaining artifacts
+        response = response.replace('Exercise', '').replace('Problem', '').strip()
 
         return response
 

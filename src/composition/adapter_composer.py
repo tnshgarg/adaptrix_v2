@@ -242,7 +242,10 @@ class AdapterComposer:
         
         # The primary output is the combined effect of all adapters
         # In parallel composition, this is emergent from the forward pass
-        primary_output = torch.tensor([sum(confidence_scores.values()) / len(confidence_scores)])
+        if confidence_scores:
+            primary_output = torch.tensor([sum(confidence_scores.values()) / len(confidence_scores)])
+        else:
+            primary_output = torch.tensor([0.5])  # Default confidence
         
         return CompositionResult(
             primary_output=primary_output,
@@ -339,7 +342,10 @@ class AdapterComposer:
                 adapter_outputs[adapter_name] = torch.tensor([confidence])
                 stage_confidence += confidence
 
-            stage_confidences.append(stage_confidence / len(stage_adapters))
+            if stage_adapters:
+                stage_confidences.append(stage_confidence / len(stage_adapters))
+            else:
+                stage_confidences.append(0.5)  # Default confidence for empty stage
 
         # Hierarchical output is the product of stage confidences
         primary_output = torch.tensor([np.prod(stage_confidences)])
@@ -400,7 +406,10 @@ class AdapterComposer:
             composition_weights[adapter_name] = suitability / total_suitability if total_suitability > 0 else 1.0 / len(selected_adapters)
             adapter_outputs[adapter_name] = torch.tensor([suitability])
 
-        primary_output = torch.tensor([total_suitability / len(selected_adapters)])
+        if selected_adapters:
+            primary_output = torch.tensor([total_suitability / len(selected_adapters)])
+        else:
+            primary_output = torch.tensor([0.0])  # No adapters selected
 
         return CompositionResult(
             primary_output=primary_output,

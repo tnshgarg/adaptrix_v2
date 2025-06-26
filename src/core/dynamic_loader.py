@@ -7,7 +7,7 @@ import threading
 from typing import Dict, List, Optional, Any
 from collections import OrderedDict
 import time
-from ..injection.layer_injector import LayerInjector
+from .layer_injector import LayerInjector
 from ..adapters.adapter_manager import AdapterManager
 from ..utils.config import config
 from ..utils.helpers import get_memory_info, timer
@@ -95,12 +95,19 @@ class DynamicLoader:
                     
                     # Inject adapter into each target layer
                     successful_layers = []
-                    
+
                     for layer_idx in layer_indices:
                         if layer_idx in adapter_data['weights']:
                             layer_weights = adapter_data['weights'][layer_idx]
-                            
-                            if self.injector.inject_adapter(layer_idx, adapter_name, layer_weights):
+
+                            # Inject into each module in the layer
+                            layer_success = True
+                            for module_name, module_data in layer_weights.items():
+                                if not self.injector.inject_adapter(adapter_name, layer_idx, module_name, module_data):
+                                    logger.error(f"Failed to inject adapter {adapter_name} into layer {layer_idx}, module {module_name}")
+                                    layer_success = False
+
+                            if layer_success:
                                 successful_layers.append(layer_idx)
                             else:
                                 logger.error(f"Failed to inject adapter {adapter_name} into layer {layer_idx}")
@@ -138,9 +145,9 @@ class DynamicLoader:
                 with timer(f"Unloading adapter {adapter_name}"):
                     # Remove from each layer
                     layer_indices = self._loaded_adapters[adapter_name]
-                    
+
                     for layer_idx in layer_indices:
-                        self.injector.remove_adapter(layer_idx, adapter_name)
+                        self.injector.remove_adapter(adapter_name)
                     
                     # Remove from loaded adapters
                     del self._loaded_adapters[adapter_name]
