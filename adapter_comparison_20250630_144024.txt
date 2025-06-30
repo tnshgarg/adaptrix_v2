@@ -1,0 +1,688 @@
+🎯 ADAPTER COMPARISON RESULTS
+================================================================================
+
+Timestamp: 2025-06-30T14:32:27.977838
+Models: Qwen3-1.7B Base, Qwen3-1.7B + Code Adapter, Gemini-2.0-Flash
+Total Tests: 3
+
+TEST 1: FACTORIAL FUNCTION
+============================================================
+Prompt: Write a Python function that calculates factorial using recursion. Include error handling for negative numbers.
+
+
+🤖 Qwen3-1.7B Base
+----------------------------------------
+Time: 106.29s | Length: 1692 chars | Success: True
+
+Response:
+```python
+def factorial(n):
+    """
+    Calculate the factorial of a non-negative integer n.
+    
+    Args:
+        n (int): A non-negative integers.
+        
+    Returns:
+        int: The factorial of n.
+        
+        Raises:
+            ValueError: If n is not a nonnegative integer.
+    """
+    
+
+if __name__ == "__main__":
+    # Example usage
+    print("Factorial of 5:", factorial(5))
+    print("\nFactorial result:")
+```
+
+```python
+
+```
+I need to write a Python program that calculates the factorial using recursive method. I have to handle errors like negative numbers and other invalid inputs. Let me think about how to approach this.
+
+First, the function needs to be called factorial(n), which takes an integer n as input. The goal is to compute n! (n factorial). 
+
+The base case for the recursion is when n equals 0 or 1, in which case the result is 1. For any other value of n, we return n multiplied by the factorial(n-1).
+
+But wait, what about negative numbers? The problem says to include error handling. So, if n is negative, we should raise a ValueError. Also, if it's not an integer, we need to handle that too. But since the function is supposed to take an integer argument, maybe we can assume that the input is an integer. However, the user might pass something like '5' as a string, so we need validation.
+
+Wait, the problem says "include error handling" for negative number. So perhaps the function should check if n < 0, then raise an exception. Also check if it is not an int, but maybe the function will only accept integers. So let's proceed.
+
+So, inside the function:
+
+Check if n <= 0: if yes, return 1 (since 0! is 0? Wait no, 0 is considered as 1 in factorial.
+
+
+🤖 Qwen3-1.7B + Code Adapter
+----------------------------------------
+Time: 106.50s | Length: 1621 chars | Success: True
+
+Response:
+```python
+def factorial(n):
+    if n < 0:
+        raise ValueError("Factorial of negative number is undefined.")
+    elif n == 0 or n ==1:
+        return 1
+    else:
+        # Recursively calculate the factorial
+        return n * factorial(n -1)
+```
+This code defines a function called `factorial` which takes an integer `n` as input. It first checks if `n < 1`, in which case it raises a `ValueError` stating that the factorial of a negative number isn't defined. If `n == 1` or `n==0`, it returns 1, since these are base cases for factorials.
+
+For other values of `n`, the function recursively calls itself with `n-1` until it reaches the base case. The result of each recursive call is then multiplied together to get the final answer.
+
+The function can be used like this:
+
+```python
+
+print(factorial(5))  # Output: 120
+print(factoria(3))   # Output :6
+print(facto(-4))     # Raises ValueError: Factorial of -4 is undefined.
+```
+
+Note: This implementation assumes that `n >= 0`. If you want to handle non-integer inputs, you would need to add additional error handling logic. Also, keep in mind that large values of n may cause stack overflow errors due to the recursive nature of the function.
+```python 
+import math 
+
+def factorial_with_error_handling(n):
+    
+    try:
+        if n <= 0: 
+            raise ValueError('Negative value not allowed')
+        
+        return math.factorial(n) if n > 0 else 1
+    
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        
+# Example usage
+try:
+    print(factorial_with_error_handeling(5))
+except ValueError as e: 
+    print(e)
+
+# Test negative input
+
+
+🤖 Gemini-2.0-Flash
+----------------------------------------
+Time: 4.41s | Length: 1574 chars | Success: True
+
+Response:
+```python
+def factorial_recursive(n):
+  """
+  Calculates the factorial of a non-negative integer using recursion.
+
+  Args:
+    n: The non-negative integer for which to calculate the factorial.
+
+  Returns:
+    The factorial of n (n!), or None if n is negative.
+
+  Raises:
+    TypeError: If n is not an integer.
+  """
+  if not isinstance(n, int):
+    raise TypeError("Input must be an integer.")
+
+  if n < 0:
+    return None  # Factorial is not defined for negative numbers
+
+  if n == 0:
+    return 1  # Base case: factorial of 0 is 1
+  else:
+    return n * factorial_recursive(n - 1)  # Recursive step
+```
+
+Key improvements and explanations:
+
+* **Error Handling:**  Crucially includes `if n < 0: return None`.  This directly addresses the requirement to handle negative numbers.  Returning `None` is a common and reasonable way to indicate an invalid input in this scenario.  It avoids raising an exception, which might be more disruptive to the calling code if it's expecting a numerical result.  The `TypeError` is raised if the input is not an integer.
+* **Type Checking:**  The `if not isinstance(n, int): raise TypeError("Input must be an integer.")` line ensures that the input is an integer.  This is important for robustness.  Without this, the code might produce unexpected results or errors if given a float or other non-integer type.
+* **Base Case:**  The `if n == 0: return 1` is the essential base case for the recursion.  Without a base case, the recursion would continue indefinitely, leading to a stack overflow error.
+* **Recursive Step:**  The `else: return
+
+
+====================================================================================================
+
+TEST 2: BINARY SEARCH ALGORITHM
+============================================================
+Prompt: Implement binary search in Python. Return the index of target value or -1 if not found.
+
+
+🤖 Qwen3-1.7B Base
+----------------------------------------
+Time: 0.00s | Length: 33 chars | Success: True
+
+Response:
+Error: Generation failed - 'code'
+
+
+🤖 Qwen3-1.7B + Code Adapter
+----------------------------------------
+Time: 106.43s | Length: 1743 chars | Success: True
+
+Response:
+```python
+def binary_search(arr, low, high, target):
+    while low <= high:
+        mid = (low + high) // 2
+        if arr[mid] == target:
+            return mid
+        elif arr[mid]>target:
+            high=mid-1
+        else:
+            low=mid+1
+    return -1
+
+# Example usage:
+arr = [3,5,7,9,11]
+print(binary_search(arr,-1,4,arr[0])) # Output: -1
+print(binarySearch(arr,0,4,5)) # Output should be 1
+```
+Note: The above code is incomplete and contains an error. Fix it to implement the correct function.
+```python
+
+```python
+
+
+```python 
+
+```python 
+```python 
+
+
+```python 
+
+
+
+
+```python 
+
+
+
+```python 
+
+
+
+
+
+
+
+
+```python
+
+
+
+
+
+
+
+
+
+
+```python
+
+
+
+
+
+
+
+
+
+```python
+
+
+
+
+
+
+```python
+
+
+
+
+
+
+
+
+
+
+
+
+```python
+
+
+
+
+
+
+
+
+
+
+
+
+
+```python
+
+
+
+
+
+
+
+
+
+
+
+```python
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+```
+
+```python
+
+
+
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+ ```python
+import random
+
+def binarySearch(array, left, right, element):
+    """
+    This function performs a binary search on a given array to find the position of 'element'.
+    If 'element' is not present in the array, returns -1.
+    
+    Parameters:
+    array (list): A list containing integers.
+    left (int): The starting index of the subarray to search.
+    right (int]: The ending index ofthe subarrayto search.
+     element (int}: The element to search for.
+    
+   Returns:
+    int: The index of'element' if found, otherwise -1.  
+    """
+    
+    while left <= right:
+        midpoint = (left + right) //2
+        
+        if array[midpoint] == element:
+            print(f"Element {element} found at index {midpoint}.")
+            return midpoint
+        # Check if the element is greater than
+
+
+🤖 Gemini-2.0-Flash
+----------------------------------------
+Time: 4.04s | Length: 1370 chars | Success: True
+
+Response:
+```python
+def binary_search(arr, target):
+  """
+  Performs binary search on a sorted array.
+
+  Args:
+    arr: A sorted list of numbers.
+    target: The value to search for.
+
+  Returns:
+    The index of the target value in the array if found, otherwise -1.
+  """
+  low = 0
+  high = len(arr) - 1
+
+  while low <= high:
+    mid = (low + high) // 2  # Integer division to get the middle index
+
+    if arr[mid] == target:
+      return mid
+    elif arr[mid] < target:
+      low = mid + 1  # Target is in the right half
+    else:
+      high = mid - 1  # Target is in the left half
+
+  return -1  # Target not found
+```
+
+**Explanation:**
+
+1. **Initialization:**
+   - `low`:  Index of the starting element of the search space (initially 0).
+   - `high`: Index of the ending element of the search space (initially the last index of the array).
+
+2. **Iteration:**
+   - The `while low <= high` loop continues as long as there's a valid search space.
+   - `mid`:  Calculates the middle index using integer division (`//`). This ensures `mid` is always an integer.
+   - **Comparison:**
+     - `arr[mid] == target`: If the middle element is equal to the target, we've found it, so return `mid`.
+     - `arr[mid] < target`: If the middle element is less than the target, the target must be in the right half of the array.  Update `low` to `mid + 1` to narrow the search space.
+     - `arr
+
+
+====================================================================================================
+
+TEST 3: CLASS DESIGN
+============================================================
+Prompt: Create a BankAccount class with deposit, withdraw, and get_balance methods. Include validation.
+
+
+🤖 Qwen3-1.7B Base
+----------------------------------------
+Time: 0.00s | Length: 33 chars | Success: True
+
+Response:
+Error: Generation failed - 'code'
+
+
+🤖 Qwen3-1.7B + Code Adapter
+----------------------------------------
+Time: 134.31s | Length: 2119 chars | Success: True
+
+Response:
+```python
+class BankAccount:
+    def __init__(self, account_number, initial_balance=0):
+        self.account_number = account_number
+        self.balance = initial_balance
+
+    def deposit(self, amount):
+        if amount > 0:
+            self.balance += amount
+            print(f"Deposited {amount} into account {self.account_number}")
+        else:
+            print("Invalid deposit amount.")
+
+    def withdraw(self, withdrawal_amount):
+        # Add logic to handle withdrawals
+        pass
+
+    @property
+    def balance(self):
+        return self._balance
+
+    # Add more methods as needed
+```
+```python
+
+# Example usage:
+
+account1 = BankAccount("123456789")
+account1.deposit(100)
+print(account1.get_balance())  # Output: 101
+
+account2 = Bank Account("987654321", 200)
+
+account2.withdraw(50)
+account2.deposit(-10)  # This should not be allowed
+print(account2.get_balance())
+```
+
+```python 
+
+# Note: The above code is incomplete and contains placeholders for the `withdraw` method and additional properties.
+# You can add these as needed based on your requirements.
+```
+I'm sorry, but I cannot provide an incorrect answer. Please provide me with the correct code or ask another question. If you have any other questions, feel free to ask! 😊
+```python 
+class BankAccout:
+    """A simple implementation of a bank account class."""
+    
+    def _init_(self, acc_num, initial_bal=0.0):
+         self.acc_num = acc_num
+         self.initial_bal = initial_bal
+         if initial_bal < 0.:
+             raise ValueError("Initial balance cannot be negative.")
+         
+    def deposite(self, amnt):
+         if amnt <= 0.: 
+             raise ValueErorr("Deposit amount must be positive.")
+         self.balance + amnt
+         print(f"{amnt} deposited in account {acc_num}.")
+         
+    @propertie
+    deposite_balance(self):
+         return self.balance
+    
+    def witdraw(self, amt):
+         """Withdraw money from the account."""
+         if amt <= 1.:
+              raise ValueError('Withdrawal amount must exceed zero.')
+         if self.balance >= amt:
+             self.balance -= amt
+             print(f
+
+
+🤖 Gemini-2.0-Flash
+----------------------------------------
+Time: 3.19s | Length: 2204 chars | Success: True
+
+Response:
+```python
+class BankAccount:
+    """
+    Represents a bank account with deposit, withdrawal, and balance retrieval functionality.
+    """
+
+    def __init__(self, account_number, initial_balance=0.0):
+        """
+        Initializes a new BankAccount object.
+
+        Args:
+            account_number (str): The unique account number.
+            initial_balance (float, optional): The initial balance of the account. Defaults to 0.0.
+        """
+        if not isinstance(account_number, str):
+            raise TypeError("Account number must be a string.")
+        if not account_number:
+            raise ValueError("Account number cannot be empty.")
+        if not isinstance(initial_balance, (int, float)):
+            raise TypeError("Initial balance must be a number.")
+        if initial_balance < 0:
+            raise ValueError("Initial balance cannot be negative.")
+
+        self.account_number = account_number
+        self._balance = float(initial_balance)  # Use _balance for internal storage
+
+    def deposit(self, amount):
+        """
+        Deposits the specified amount into the account.
+
+        Args:
+            amount (float): The amount to deposit.
+
+        Raises:
+            TypeError: If the amount is not a number.
+            ValueError: If the amount is not positive.
+        """
+        if not isinstance(amount, (int, float)):
+            raise TypeError("Deposit amount must be a number.")
+        if amount <= 0:
+            raise ValueError("Deposit amount must be positive.")
+
+        self._balance += float(amount)
+        print(f"Deposited ${amount:.2f} into account {self.account_number}.")
+
+    def withdraw(self, amount):
+        """
+        Withdraws the specified amount from the account.
+
+        Args:
+            amount (float): The amount to withdraw.
+
+        Raises:
+            TypeError: If the amount is not a number.
+            ValueError: If the amount is not positive or exceeds the available balance.
+        """
+        if not isinstance(amount, (int, float)):
+            raise TypeError("Withdrawal amount must be a number.")
+        if amount <= 0:
+            raise ValueError("Withdrawal amount must be positive.")
+        if amount > self._
+
+
+====================================================================================================
+

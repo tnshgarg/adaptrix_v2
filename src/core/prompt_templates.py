@@ -6,9 +6,9 @@ from typing import Dict, Any
 
 
 class PromptTemplateManager:
+    TEMPLATES = {
     """Manages domain-specific prompt templates for Gemini-level quality."""
     
-    TEMPLATES = {
         'mathematics': {
             'template': """You are a helpful and expert mathematics tutor.
 Task: {task}
