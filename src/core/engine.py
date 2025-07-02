@@ -724,97 +724,6 @@ class AdaptrixEngine:
             return False
         return True
 
-    def _apply_domain_prompt_engineering(self, prompt: str) -> str:
-        """Apply Gemini-style structured prompt engineering."""
-        try:
-            from .prompt_templates import PromptTemplateManager
-
-            # Get current adapter info
-            current_adapter = None
-            if hasattr(self, 'dynamic_loader') and self.dynamic_loader:
-                loaded_adapters = self.dynamic_loader.get_loaded_adapters()
-                if loaded_adapters:
-                    current_adapter = list(loaded_adapters.keys())[0]  # Get first loaded adapter
-
-            # Get structured prompt using template manager
-            structured_prompt = PromptTemplateManager.get_structured_prompt(
-                task=prompt,
-                adapter_name=current_adapter
-            )
-
-            logger.debug(f"Applied structured prompt template for adapter: {current_adapter}")
-            return structured_prompt
-
-        except Exception as e:
-            logger.warning(f"Structured prompt engineering failed: {e}")
-            return prompt
-
-    def _build_context_prompt(self, current_prompt: str) -> str:
-        """
-        Build a context-aware prompt using conversation history.
-
-        Args:
-            current_prompt: The current user input
-
-        Returns:
-            Context-enhanced prompt
-        """
-        if not self.conversation_history:
-            return current_prompt
-
-        # For single queries without context keywords, don't use context
-        context_keywords = ['what did i', 'my name', 'i told you', 'remember', 'earlier', 'before']
-        if not any(keyword in current_prompt.lower() for keyword in context_keywords):
-            return current_prompt
-
-        # Build context from recent history
-        context_parts = []
-
-        # Add recent exchanges (limit to avoid token overflow)
-        recent_history = self.conversation_history[-2:]  # Last 2 exchanges only
-
-        for exchange in recent_history:
-            context_parts.append(f"Previous: {exchange['user']} -> {exchange['assistant'][:100]}...")
-
-        # Add current prompt
-        context_parts.append(f"Current question: {current_prompt}")
-
-        return "\n".join(context_parts)
-
-    def _add_to_history(self, user_input: str, assistant_response: str) -> None:
-        """
-        Add an exchange to conversation history.
-
-        Args:
-            user_input: User's input
-            assistant_response: Assistant's response
-        """
-        exchange = {
-            'user': user_input,
-            'assistant': assistant_response,
-            'timestamp': time.time()
-        }
-
-        self.conversation_history.append(exchange)
-
-        # Trim history if it gets too long
-        if len(self.conversation_history) > self.max_history_length:
-            self.conversation_history = self.conversation_history[-self.max_history_length:]
-
-    def clear_conversation_history(self) -> None:
-        """Clear the conversation history."""
-        self.conversation_history = []
-        logger.info("Conversation history cleared")
-
-    def get_conversation_history(self) -> List[Dict[str, Any]]:
-        """Get the current conversation history."""
-        return self.conversation_history.copy()
-
-    def set_conversation_context(self, enabled: bool) -> None:
-        """Enable or disable conversation context."""
-        self.use_conversation_context = enabled
-        logger.info(f"Conversation context {'enabled' if enabled else 'disabled'}")
-
     def _post_process_response_gemini_style(self, response: str, original_prompt: str = "") -> str:
         """
         Enhanced post-processing for high-quality, structured responses.
@@ -844,14 +753,90 @@ class AdaptrixEngine:
             # Apply domain-specific formatting
             response = ResponseFormatter.format_response(response, domain)
 
-            # Final quality checks
-            response = self._final_quality_polish(response, domain)
+            # Simple markdown compliance polish
+            response = self._apply_simple_markdown_polish(response, domain)
 
             return response
 
         except Exception as e:
             logger.error(f"Enhanced post-processing failed: {e}")
             return self._post_process_response(response, original_prompt)
+
+    def _apply_simple_markdown_polish(self, response: str, domain: str) -> str:
+        """Apply simple markdown formatting polish without complex parsing."""
+        if not response:
+            return response
+
+        # Simple code block detection and wrapping
+        if domain == 'programming' and ('def ' in response or 'function ' in response or 'class ' in response):
+            if '```' not in response:
+                # Simple heuristic: if it looks like mostly code, wrap it
+                lines = response.split('\n')
+                code_indicators = sum(1 for line in lines if any(indicator in line for indicator in ['def ', 'class ', 'function ', 'import ', 'from ', '=', '(', ')']))
+                
+                if code_indicators > len(lines) // 3:  # More than 1/3 of lines look like code
+                    response = f"```python\n{response}\n```"
+
+        # Ensure proper capitalization
+        if response and not response[0].isupper() and response[0] not in ['`', '#', '"', "'"]:
+            response = response[0].upper() + response[1:]
+
+        # Ensure proper ending
+        if response and not response.endswith(('.', '!', '?', ':', '```', '"', '\n')):
+            response += '.'
+
+        return response.strip()
+
+    def _apply_domain_prompt_engineering(self, prompt: str) -> str:
+        """Apply domain-specific prompt engineering with markdown formatting instructions."""
+        try:
+            from .prompt_templates import PromptTemplateManager
+
+            # Get current adapter info
+            current_adapter = None
+            if hasattr(self, 'dynamic_loader') and self.dynamic_loader:
+                loaded_adapters = self.dynamic_loader.get_loaded_adapters()
+                if loaded_adapters:
+                    current_adapter = list(loaded_adapters.keys())[0]
+
+            # Detect domain
+            domain = self._detect_domain_from_adapter(current_adapter, prompt)
+
+            # Add markdown formatting instructions based on domain
+            if domain == 'programming':
+                enhanced_prompt = f"""Please provide a well-formatted response with proper markdown formatting. For any code, use appropriate code blocks with language specification (```python, ```javascript, etc.). Include clear explanations before code blocks.
+
+{prompt}
+
+Please format your response using proper markdown with code blocks and clear structure."""
+
+            elif domain == 'mathematics':
+                enhanced_prompt = f"""Please provide a well-formatted mathematical response using proper markdown formatting. Use step-by-step explanations and clear mathematical notation.
+
+{prompt}
+
+Please format your response with clear steps and mathematical expressions."""
+
+            elif domain == 'journalism':
+                enhanced_prompt = f"""Please provide a well-formatted journalistic response using proper markdown formatting with headlines and structured content.
+
+{prompt}
+
+Please format your response with proper headlines and paragraph structure."""
+
+            else:
+                enhanced_prompt = f"""Please provide a well-formatted response using proper markdown formatting with clear structure and organization.
+
+{prompt}
+
+Please format your response clearly and professionally."""
+
+            logger.debug(f"Applied domain-specific prompt engineering for: {domain}")
+            return enhanced_prompt
+
+        except Exception as e:
+            logger.warning(f"Domain prompt engineering failed: {e}")
+            return f"Please provide a well-formatted markdown response:\n\n{prompt}"
 
     def _detect_domain_from_adapter(self, adapter_name: str, prompt: str = "") -> str:
         """
@@ -966,134 +951,71 @@ class AdaptrixEngine:
 
         return response
 
-    def _final_quality_polish(self, response: str, domain: str) -> str:
-        """Apply final quality polish for professional output."""
-        if not response:
-            return response
+    def _build_context_prompt(self, current_prompt: str) -> str:
+        """
+        Build a context-aware prompt using conversation history.
 
-        # Ensure proper capitalization (unless starting with code)
-        if response and not response[0].isupper() and not response[0].isdigit() and response[0] not in ['`', '#', '"', "'"]:
-            response = response[0].upper() + response[1:]
+        Args:
+            current_prompt: The current user input
 
-        # Domain-specific polish with enhanced logic
-        if domain == 'programming':
-            # Enhanced code formatting
-            if any(keyword in response for keyword in ['def ', 'class ', 'import ', 'return ', 'if ', 'for ']):
-                # This looks like code content
-                if '```' not in response:
-                    # Wrap in code block if not already wrapped
-                    if response.startswith('def ') or response.startswith('class ') or response.startswith('import '):
-                        # Pure code response
-                        response = f"```python\n{response}\n```"
-                    else:
-                        # Mixed response with code - look for code sections
-                        lines = response.split('\n')
-                        formatted_lines = []
-                        in_code_section = False
-                        code_section = []
-                        
-                        for line in lines:
-                            line_stripped = line.strip()
-                            # Detect code lines
-                            if any(keyword in line_stripped for keyword in ['def ', 'class ', 'import ', 'from ', 'if ', 'for ', 'while ', 'try:', 'except:']):
-                                if not in_code_section:
-                                    # Starting code section
-                                    if formatted_lines:
-                                        formatted_lines.append('')  # Add space before code
-                                    formatted_lines.append('```python')
-                                    in_code_section = True
-                                formatted_lines.append(line)
-                            elif in_code_section and (line_stripped == '' or line.startswith('    ') or line.startswith('\t')):
-                                # Continue code section (empty line or indented)
-                                formatted_lines.append(line)
-                            else:
-                                # End code section
-                                if in_code_section:
-                                    formatted_lines.append('```')
-                                    formatted_lines.append('')  # Add space after code
-                                    in_code_section = False
-                                formatted_lines.append(line)
-                        
-                        # Close any open code block
-                        if in_code_section:
-                            formatted_lines.append('```')
-                        
-                        response = '\n'.join(formatted_lines)
-                
-                # Ensure code has proper structure
-                if 'def ' in response and '"""' not in response and "'''" not in response:
-                    # Add basic docstring to functions without them
-                    response = self._add_missing_docstrings(response)
+        Returns:
+            Context-enhanced prompt
+        """
+        if not self.conversation_history:
+            return current_prompt
 
-        elif domain == 'journalism':
-            # Enhanced news formatting
-            if not response.startswith('#') and '\n' in response:
-                lines = response.split('\n')
-                # Check if first line could be a headline
-                first_line = lines[0].strip()
-                if first_line and len(first_line) < 100 and not first_line.endswith('.'):
-                    lines[0] = f"# {first_line}"
-                    response = '\n'.join(lines)
+        # For single queries without context keywords, don't use context
+        context_keywords = ['what did i', 'my name', 'i told you', 'remember', 'earlier', 'before']
+        if not any(keyword in current_prompt.lower() for keyword in context_keywords):
+            return current_prompt
 
-        elif domain == 'mathematics':
-            # Enhanced math formatting
-            if '=' in response and 'Step' not in response and 'step' not in response:
-                # Add step structure if missing for clearer presentation
-                lines = response.split('\n')
-                formatted_lines = []
-                step_count = 1
+        # Build context from recent history
+        context_parts = []
 
-                for line in lines:
-                    line = line.strip()
-                    if '=' in line and len(line) > 5 and not line.startswith('Step'):
-                        formatted_lines.append(f"**Step {step_count}:** {line}")
-                        step_count += 1
-                    elif line:
-                        formatted_lines.append(line)
+        # Add recent exchanges (limit to avoid token overflow)
+        recent_history = self.conversation_history[-2:]  # Last 2 exchanges only
 
-                if step_count > 1:  # Only apply if we found actual steps
-                    response = '\n'.join(formatted_lines)
+        for exchange in recent_history:
+            context_parts.append(f"Previous: {exchange['user']} -> {exchange['assistant'][:100]}...")
 
-        # Ensure proper ending punctuation (but not for code blocks)
-        if response and not response.endswith(('.', '!', '?', ':', '```', '"', '\n')):
-            # Don't add period if last line looks like code or a list item
-            last_line = response.split('\n')[-1].strip()
-            if not (last_line.startswith('- ') or last_line.startswith('* ') or 
-                    any(keyword in last_line for keyword in ['def ', 'class ', 'import ', 'return '])):
-                response += '.'
+        # Add current prompt
+        context_parts.append(f"Current question: {current_prompt}")
 
-        return response
-    
-    def _add_missing_docstrings(self, response: str) -> str:
-        """Add basic docstrings to functions that don't have them."""
-        lines = response.split('\n')
-        result_lines = []
-        i = 0
-        
-        while i < len(lines):
-            line = lines[i]
-            result_lines.append(line)
-            
-            # Check if this is a function definition
-            if 'def ' in line and '(' in line and ')' in line and ':' in line:
-                # Look ahead to see if next non-empty line is a docstring
-                j = i + 1
-                while j < len(lines) and lines[j].strip() == '':
-                    j += 1
-                
-                if j < len(lines):
-                    next_line = lines[j].strip()
-                    if not (next_line.startswith('"""') or next_line.startswith("'''")):
-                        # No docstring found, add a basic one
-                        function_name = line.split('def ')[1].split('(')[0]
-                        indent = '    ' if not line.startswith('    ') else '        '
-                        result_lines.append(f'{indent}"""')
-                        result_lines.append(f'{indent}{function_name.replace("_", " ").title()} function.')
-                        result_lines.append(f'{indent}"""')
-            
-            i += 1
-        
-        return '\n'.join(result_lines)
+        return "\n".join(context_parts)
+
+    def _add_to_history(self, user_input: str, assistant_response: str) -> None:
+        """
+        Add an exchange to conversation history.
+
+        Args:
+            user_input: User's input
+            assistant_response: Assistant's response
+        """
+        exchange = {
+            'user': user_input,
+            'assistant': assistant_response,
+            'timestamp': time.time()
+        }
+
+        self.conversation_history.append(exchange)
+
+        # Trim history if it gets too long
+        if len(self.conversation_history) > self.max_history_length:
+            self.conversation_history = self.conversation_history[-self.max_history_length:]
+
+    def clear_conversation_history(self) -> None:
+        """Clear the conversation history."""
+        self.conversation_history = []
+        logger.info("Conversation history cleared")
+
+    def get_conversation_history(self) -> List[Dict[str, Any]]:
+        """Get the current conversation history."""
+        return self.conversation_history.copy()
+
+    def set_conversation_context(self, enabled: bool) -> None:
+        """Enable or disable conversation context."""
+        self.use_conversation_context = enabled
+        logger.info(f"Conversation context {'enabled' if enabled else 'disabled'}")
 
     def _post_process_response(self, response: str, original_prompt: str = "") -> str:
         """
