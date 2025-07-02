@@ -1,0 +1,266 @@
+{
+  "metadata": {
+    "timestamp": "2025-07-02T13:56:47.915936",
+    "model_name": "Qwen/Qwen3-1.7B",
+    "adaptrix_adapter": "code_adapter_middle_layers",
+    "total_tests": 5,
+    "benchmark_type": "working_adaptrix_with_fixes"
+  },
+  "overall_statistics": {
+    "base": {
+      "name": "Base Qwen3-1.7B",
+      "avg_score": 67.2,
+      "avg_time": 78.17611780166627,
+      "success_rate": 1.0,
+      "total_tests": 5,
+      "all_scores": [
+        59.99999999999999,
+        31.999999999999996,
+        96.0,
+        48.0,
+        100
+      ]
+    },
+    "peft_lora": {
+      "name": "Qwen3 + Your Trained PEFT LoRA",
+      "avg_score": 53.6,
+      "avg_time": 75.73638434410095,
+      "success_rate": 1.0,
+      "total_tests": 5,
+      "all_scores": [
+        36.0,
+        0.0,
+        88.0,
+        56.0,
+        88.0
+      ]
+    },
+    "gemini": {
+      "name": "Gemini Flash 2.0",
+      "avg_score": 87.2,
+      "avg_time": 2.6852322578430177,
+      "success_rate": 1.0,
+      "total_tests": 5,
+      "all_scores": [
+        96.0,
+        88.0,
+        96.0,
+        56.0,
+        100
+      ]
+    },
+    "adaptrix": {
+      "name": "Qwen3 + Adaptrix Middle-Layer System",
+      "avg_score": 77.6,
+      "avg_time": 110.91452660560608,
+      "success_rate": 1.0,
+      "total_tests": 5,
+      "all_scores": [
+        100,
+        96.0,
+        96.0,
+        0.0,
+        96.0
+      ]
+    }
+  },
+  "detailed_results": {
+    "Simple Function": {
+      "base": {
+        "content": "| Code Review\nCode Review\nHome\nWriting\nPython\nWrite a Python function to calculate factorial\nWrite a Python function to calculate factorial\nPosted by | 2019-06-17 | 0 Comments\nI have to write a Python function to calculate the factorial of a given number.\nThe function should return 1 if the input is 0.\nOtherwise, it should return the product of the number and the factorial of the previous number.\nSo, for example, 5! = 5 \u00d7 4 \u00d7 3 \u00d7 2 \u00d7 1 = 120.\nI need to write the function.\nLet me think.\nFirst, what is the base case? The base case is when the number",
+        "generation_time": 68.64488506317139,
+        "length": 553,
+        "success": true,
+        "quality_score": 59.99999999999999
+      },
+      "peft_lora": {
+        "content": "def fact(n):\n    # insert your code here\n    pass\n\nn = 5\nprint(fact(n))\nn = 10\nprint(fact(n))\nn = 0\nprint(fact(n))\nn = 1\nprint(fact(n))\nn = 2\nprint(fact(n))\nn = 3\nprint(fact(n))\nn = 4\nprint(fact(n))\nn = 7\nprint(fact(n))\nn = 8\nprint(fact(n))\nn = 9\nprint(fact(n))\nn = 10\nprint(fact(n))\nn = 11\nprint(fact(n))\nn = 12\nprint(fact(n))\nn =",
+        "generation_time": 72.31480193138123,
+        "length": 331,
+        "success": true,
+        "quality_score": 36.0
+      },
+      "gemini": {
+        "content": "```python\ndef factorial(n):\n  \"\"\"\n  Calculates the factorial of a non-negative integer.\n\n  Args:\n    n: A non-negative integer.\n\n  Returns:\n    The factorial of n (n!), which is the product of all positive integers\n    less than or equal to n. Returns 1 if n is 0.\n    Raises ValueError if n is negative.\n  \"\"\"\n  if n < 0:\n    raise ValueError(\"Factorial is not defined for negative numbers.\")\n  elif n == 0:\n    return 1\n  else:\n    result = 1\n    for i in range(1, n + 1):\n      ",
+        "generation_time": 2.072927951812744,
+        "length": 481,
+        "success": true,
+        "quality_score": 96.0
+      },
+      "adaptrix": {
+        "content": "```python def factorial(n): # base case if n == 0 or n ==1: return 1 else: result = 1 for i in range(2, n+1): result *=i return result # Example usage print(factorial(5)) # Output should be 120 ``` I have written the code above. The function calculates the factorial of a number by multiplying all integers from 1 up to the given number. It handles the special cases where n is 0 (which returns 1) or 1 (also returning 1). For other values, it multiplies sequentially from 2 to n. This implementation uses a loop that iterates from 3 to n inclusive and multiplies each value with the current product. However, I need to make sure that this code works correctly for different inputs and edge cases. What could go wrong? The provided code seems correct as written. However, there might be some potential issues depending on how the input is handled. Here's what you should consider: 1. **Input Validation**: If `n` is not an integer or negative, the function may behave unexpectedly. You should add checks to ensure.",
+        "generation_time": 112.80060386657715,
+        "length": 1014,
+        "success": true,
+        "quality_score": 100
+      }
+    },
+    "Basic Loop": {
+      "base": {
+        "content": "a) with a while loop, b) with a for loop, c) using recursion. Also, create a function that computes the sum of all numbers from 1 to n: a) with a while loop, b) with a for loop, c) using recursion. Explain the differences between the three versions of the same function in each case.\n\nAdditionally, create a function that counts from 1 to n using a loop that checks if the number is even or odd, and then prints the number if it's even, and prints the square of the number if it's odd. Explain the differences between the three versions of the same function in each case.\n\nFor the second part, create a function that computes the sum of all numbers from",
+        "generation_time": 90.69274091720581,
+        "length": 653,
+        "success": true,
+        "quality_score": 31.999999999999996
+      },
+      "peft_lora": {
+        "content": "for example, the output should be \"1, 2, 3, ..., n\".\ndef count(n):\n    \"\"\"Counts from 1 to n.\"\"\"\n    pass\n# Test the function\ncount(5)\n# Expected output: \"1, 2, 3, 4, 5\"\n``` \nMake sure to handle edge cases, such as n=0 and n negative. Also, consider the performance for large values of n.\n```python\ndef count(n):\n    \"\"\"Counts from 1 to n.\"\"\"\n    if n < 1:\n        return \"Error: n must be at least 1\"\n    result = \"\"\n    for i in range(1, n+1):\n        result += str(i)",
+        "generation_time": 84.31535267829895,
+        "length": 470,
+        "success": true,
+        "quality_score": 0.0
+      },
+      "gemini": {
+        "content": "```python\ndef count_to_n(n):\n  \"\"\"\n  Counts from 1 to n (inclusive) and prints each number.\n\n  Args:\n    n: An integer representing the upper limit of the count.\n  \"\"\"\n  if not isinstance(n, int):\n    raise TypeError(\"n must be an integer\")\n  if n <= 0:\n    raise ValueError(\"n must be a positive integer\")\n\n  for i in range(1, n + 1):\n    print(i)\n\n\n# Example usage:\ncount_to_n(5)  # Output: 1 2 3 4 5\n\n# Example usage with error handling:\n",
+        "generation_time": 3.1621289253234863,
+        "length": 441,
+        "success": true,
+        "quality_score": 88.0
+      },
+      "adaptrix": {
+        "content": "```python def count_to_n(n): for i in range(1, n+1): print(i) ``` Wait, but this is not the only way. For example, if you want to create an array of numbers with indices starting at zero instead of one, then you could do something like this: But how can I make it work? Let me think... Oh right! You can use a list comprehension or another method... Hmm, what about using a while loop? Yes, here's a version where we start counting from zero: for i in itertools.count(start=0): if i > n: break else: print(f\"{i}\") But wait, does the 'itertools' module need to be imported? I'm trying to find out which approach would be more efficient. Also, there might be other approaches as well... Okay, so let's see. The original code was straightforward and easy to understand, even though it prints from 2 to n when called with n being 3 (like count_to_3() -> 2,3). But maybe the user wants to have a different behavior based on some condition. However, the question just says \"count from 5 to 8\", which.",
+        "generation_time": 125.79400610923767,
+        "length": 994,
+        "success": true,
+        "quality_score": 96.0
+      }
+    },
+    "List Processing": {
+      "base": {
+        "content": "def find_max_value(lst):\n    # your code here\n    # return the maximum value\n    pass\n\nTo solve this problem, we can use the built-in max() function in Python. The max() function takes an iterable and returns the largest item in it. Since a list is an iterable, we can pass it to the max() function to find the maximum value.\n\nHere's the code to implement the function:\n\ndef find_max_value(lst):\n    return max(lst)\n\nThis function takes a list as input and returns the maximum value in the list. It's a simple and efficient solution that leverages Python's built-in capabilities.\n\nLet me know if you need any additional features or edge case handling, like empty lists or lists with negative numbers",
+        "generation_time": 89.91194105148315,
+        "length": 699,
+        "success": true,
+        "quality_score": 96.0
+      },
+      "peft_lora": {
+        "content": "[1, 2, 3, 4, 5].\ndef find_max_value(list): \n\n# YOUR CODE HERE #\nThe list contains only integers. The function should return the maximum value in the list. Write the function with the following signature: def find_max_value(list). \n\nAdditionally, handle the following edge cases:\n\n1. If the list is empty, return 0.\n2. If the list contains negative integers, return the smallest negative integer.\n3. If the list contains floating point numbers, return the maximum float.\n4. If the list contains strings, return the string with the maximum length.\n5. If the list contains None, return None.\n6. If the list contains multiple maximum values, return the maximum value",
+        "generation_time": 67.72099184989929,
+        "length": 662,
+        "success": true,
+        "quality_score": 88.0
+      },
+      "gemini": {
+        "content": "```python\ndef find_maximum(data):\n  \"\"\"\n  Finds the maximum value in a list.\n\n  Args:\n    data: A list of numbers.  Handles empty list case by returning None.\n\n  Returns:\n    The maximum value in the list, or None if the list is empty.\n  \"\"\"\n  if not data:  # Check if the list is empty\n    return None  # Return None if the list is empty\n\n  maximum = data[0]  # Initialize maximum to the first element\n  for item in data:\n    if item > maximum:\n      maximum = item  # Update maximum if a larger element is found\n\n  return maximum\n\n# Example usage",
+        "generation_time": 1.9265532493591309,
+        "length": 548,
+        "success": true,
+        "quality_score": 96.0
+      },
+      "adaptrix": {
+        "content": "I'm sorry, but I can't write code for you. However, here's how to find the maximum element in a Python list using different methods: 1. Using built-in functions - max() method of the list example: my_list = [5, 2, 8, 1] max_value = max(my_list) print(max_value) # Output: 8 2. Iterating through the list with a loop initialize max_val as the first element, then compare each subsequent element with max_val Example: def find_max(lst): if not lst: return None max_val = lst[0] for num in lst[1:]: if num > max_val: max_val += num return max_val 3. Using recursion (for learning purposes only) base case: when there is one element in the list, it is the maximum recursive step: compare current element with the maximum of remaining elements For example: def find_max_recursive(lst): if len(lst) == 1: return lst[4] else: mid = len(lst)//2 left_sublist = lst[:mid] right.",
+        "generation_time": 109.02115392684937,
+        "length": 868,
+        "success": true,
+        "quality_score": 96.0
+      }
+    },
+    "Error Handling": {
+      "base": {
+        "content": "the first number is the numerator, and the second is the denominator. The function must return the result of the division. Additionally, the function must handle cases where the denominator is zero and return a specific message. The function must be named \"safe_divide\" and must take two parameters: numerator and denominator.\nTo be specific, the function must return the result of the division when the denominator is not zero, and return \"Division by zero\" when the denominator is zero.\n```python\ndef safe_divide(numerator, denominator):\n    # your code here\n```\nTo make it more challenging, the function must also handle cases where the denominator is a float and the numerator is a float. The function must also handle cases where the denominator is",
+        "generation_time": 71.0814151763916,
+        "length": 753,
+        "success": true,
+        "quality_score": 48.0
+      },
+      "peft_lora": {
+        "content": "`numerator` and `denominator`. The function should handle potential division by zero errors and return a meaningful error message. Additionally, the function should also handle negative numbers and return the result as a floating point number. \n\nFor example, if `numerator = 10` and `denominator = 3`, the function should return `3.333...` as a float. If `numerator = 10` and `denominator = 0`, the function should return an error message like `\"Division by zero is not allowed.\"`.\n```python\ndef safe_divide(numerator, denominator):\n    # Your code here\n```\n```python\nsafe_divide(10, 3)\n# Output",
+        "generation_time": 69.09163308143616,
+        "length": 595,
+        "success": true,
+        "quality_score": 56.0
+      },
+      "gemini": {
+        "content": "```python\ndef safe_divide(numerator, denominator):\n  \"\"\"\n  Divides two numbers safely, handling the case of division by zero.\n\n  Args:\n    numerator: The number to be divided (dividend).\n    denominator: The number to divide by (divisor).\n\n  Returns:\n    The result of the division (numerator / denominator) if the denominator is not zero.\n    Returns None if the denominator is zero to avoid ZeroDivisionError.\n  \"\"\"\n  if denominator == 0:\n    return None  # Indicate division by zero is not possible\n  else:\n    return numerator / denominator\n\n# Example usage\nresult1 = safe_divide(10, 2)\n",
+        "generation_time": 2.875791072845459,
+        "length": 591,
+        "success": true,
+        "quality_score": 56.0
+      },
+      "adaptrix": {
+        "content": "```python def safe_divide(a, b): \"\"\" Safely divide two numbers. Parameters: a (int or float): The dividend. b (int\u6216float): The divisor. Returns: float: The result of dividing a by b if successful, None otherwise. \"\"\" ``` I'm sorry for the confusion. I'll be more careful to ensure clarity in my explanation. Let me restate it with clearer instructions and better structure: Here's how we can create a `safe_divide` function that handles division while ensuring safety from potential errors like ZeroDivisionError: 1. **Function Definition**: - Define the function `safeDivide` which takes two parameters: `numerator` and `denominator`. 2. **Check for Division by Zero**: 3. **Return Result**: 4. **Example Usage**: 5. **Edge Cases Considered**: 6. **Documentation String**: Let me now write this out clearly and carefully. The goal is to implement a function called `safe_addition()` that performs addition on integers only when both arguments are positive. Otherwise, return 0. Here\u2019s what needs to happen: 1\ufe0f\u20e3 If either argument is not.",
+        "generation_time": 106.038409948349,
+        "length": 1038,
+        "success": true,
+        "quality_score": 0.0
+      }
+    },
+    "Data Structure": {
+      "base": {
+        "content": "def remove_duplicates(list):\n    \"\"\"Remove duplicates from a list.\"\"\"\n    # your code here\n    new_list = []\n    for item in list:\n        if item not in new_list:\n            new_list.append(item)\n    return new_list\n\ndef remove_duplicates(list):\n    \"\"\"Remove duplicates from a list.\"\"\"\n    # your code here\n    new_list = []\n    for item in list:\n        if item not in new_list:\n            new_list.append(item)\n    return new_list\n\nWait, I see the problem. The function is named remove_duplicates, but the code is not using the function name. Oh, I see. The code is written with the function definition and the function body, but the function name is not used properly. So",
+        "generation_time": 70.54960680007935,
+        "length": 678,
+        "success": true,
+        "quality_score": 100
+      },
+      "peft_lora": {
+        "content": "list = [1, 2, 3, 1, 4, 5, 2, 3, 6]\nThe function should return a new list with only unique elements.\nUse list comprehensions or built-in functions.\nMake sure to consider edge cases, such as empty lists or lists with all elements unique.\nProvide an example of the function usage.\n# Example Output\n# [1, 2, 3, 4, 5, 6]\ndef remove_duplicates(lst):\n    pass\nlist = [1, 2, 3, 1, 4, 5, 2, 3, 6]\nprint(remove_duplicates(list))\n# Output\n# [1, 2",
+        "generation_time": 85.23914217948914,
+        "length": 435,
+        "success": true,
+        "quality_score": 88.0
+      },
+      "gemini": {
+        "content": "```python\ndef remove_duplicates(input_list):\n  \"\"\"\n  Removes duplicate elements from a list while preserving the original order.\n\n  Args:\n    input_list: The list to remove duplicates from.\n\n  Returns:\n    A new list containing only the unique elements from the input list,\n    in the same order they first appeared.\n  \"\"\"\n  seen = set()  # Use a set to efficiently track seen elements\n  result = []\n  for item in input_list:\n    if item not in seen:\n      seen.add(item)\n      result.append(item)\n  return result\n\n# Example usage:\nmy_list = [1,",
+        "generation_time": 3.3887600898742676,
+        "length": 545,
+        "success": true,
+        "quality_score": 100
+      },
+      "adaptrix": {
+        "content": "```python def remove_duplicates(lst): \"\"\" Removes duplicate elements from the given list. Args: lst (list): The input list to process. Returns: list: A new list with all duplicate elements removed. \"\"\" # Your code here ``` I need you to write the implementation of this function. You can use any data structures or algorithms you like as long as they're efficient for the problem at hand. So I'm thinking about how to approach this. To remove duplicates, one common method is to iterate through each element in the list and check if it has been seen before using a set. However, since we want to preserve the order of the original list, we should track which elements have already been added to the result list. Wait, but sets do not maintain order. So maybe we can use a dictionary to keep track of elements we've encountered so far. But then again, dictionaries don't store keys in sorted order either. Hmm... Alternatively, perhaps we can create a new list by iterating over the original elements and adding them to the new list only if they haven't been added yet. Let me think. If we loop through each item in the original lisr, and add it to a new_list only.",
+        "generation_time": 100.91845917701721,
+        "length": 1164,
+        "success": true,
+        "quality_score": 96.0
+      }
+    }
+  },
+  "test_prompts": [
+    {
+      "name": "Simple Function",
+      "prompt": "Write a Python function to calculate factorial:",
+      "expected": [
+        "def",
+        "factorial",
+        "return"
+      ]
+    },
+    {
+      "name": "Basic Loop",
+      "prompt": "Create a function that counts from 1 to n:",
+      "expected": [
+        "def",
+        "for",
+        "range"
+      ]
+    },
+    {
+      "name": "List Processing",
+      "prompt": "Write a function that finds the maximum value in a list:",
+      "expected": [
+        "def",
+        "max",
+        "list"
+      ]
+    },
+    {
+      "name": "Error Handling",
+      "prompt": "Write a function that safely divides two numbers:",
+      "expected": [
+        "def",
+        "try",
+        "except"
+      ]
+    },
+    {
+      "name": "Data Structure",
+      "prompt": "Create a function that removes duplicates from a list:",
+      "expected": [
+        "def",
+        "list",
+        "return"
+      ]
+    }
+  ]
+}
