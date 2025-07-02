@@ -139,26 +139,29 @@ class FinalAdaptrixBenchmark:
                     # For each attention module
                     for module_name in ['self_attn.q_proj', 'self_attn.k_proj', 'self_attn.v_proj', 'self_attn.o_proj']:
                         
-                        # Try to find weights from source layers (use layer 0-4 as sources)
+                        # Try to find weights from source layers (use multiple layers for averaging)
                         lora_a_weights = []
                         lora_b_weights = []
                         
-                        for source_layer in range(5):  # Use first 5 layers as sources
-                            lora_a_key = f"base_model.model.model.layers.{source_layer}.{module_name}.lora_A.default.weight"
-                            lora_b_key = f"base_model.model.model.layers.{source_layer}.{module_name}.lora_B.default.weight"
+                        # Use layers 0-7 as sources (early layers)
+                        for source_layer in range(8):
+                            lora_a_key = f"base_model.model.model.layers.{source_layer}.{module_name}.lora_A.weight"
+                            lora_b_key = f"base_model.model.model.layers.{source_layer}.{module_name}.lora_B.weight"
                             
                             try:
                                 lora_a = f.get_tensor(lora_a_key)
                                 lora_b = f.get_tensor(lora_b_key)
                                 lora_a_weights.append(lora_a)
                                 lora_b_weights.append(lora_b)
-                            except:
+                            except Exception as e:
+                                print(f"         ⚠️  Failed to load {lora_a_key}: {e}")
                                 continue
                         
                         # If we found weights, average them and inject
                         if lora_a_weights and lora_b_weights:
-                            avg_lora_a = torch.stack(lora_a_weights).mean(dim=0) * 0.3  # Scale down for stability
-                            avg_lora_b = torch.stack(lora_b_weights).mean(dim=0) * 0.3
+                            # Average the weights from source layers
+                            avg_lora_a = torch.stack(lora_a_weights).mean(dim=0) * 0.5  # Scale down for stability
+                            avg_lora_b = torch.stack(lora_b_weights).mean(dim=0) * 0.5
                             
                             # Create adapter data
                             adapter_data = {
