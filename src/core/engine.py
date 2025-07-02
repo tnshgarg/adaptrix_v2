@@ -210,27 +210,29 @@ class AdaptrixEngine:
 
                 # Calculate max_new_tokens from max_length
                 input_length = inputs['input_ids'].shape[1]
-                max_new_tokens = max(50, max_length - input_length)  # Increased minimum to 50
+                max_new_tokens = max(50, max_length - input_length)
 
-                # Enhanced generation parameters for complete, structured responses
+                # ANTI-ARTIFACT GENERATION PARAMETERS - focused on clean, direct output
                 generation_kwargs = {
-                    'max_new_tokens': max(256, max_new_tokens),  # Ensure sufficient length for complete responses
-                    'min_new_tokens': kwargs.get('min_new_tokens', 50),  # Increased minimum for meaningful content
-                    'do_sample': kwargs.get('do_sample', True),  # Use sampling for natural responses
-                    'temperature': kwargs.get('temperature', 0.8),  # Slightly increased for better creativity
-                    'top_p': kwargs.get('top_p', 0.9),  # Nucleus sampling for quality
-                    'top_k': kwargs.get('top_k', 50),  # Top-k for diversity
+                    'max_new_tokens': max(256, max_new_tokens),
+                    'min_new_tokens': kwargs.get('min_new_tokens', 30),  # Reduced minimum for concise responses
+                    'do_sample': kwargs.get('do_sample', True),
+                    'temperature': kwargs.get('temperature', 0.7),  # Reduced for more focused output
+                    'top_p': kwargs.get('top_p', 0.85),  # Reduced for more deterministic responses
+                    'top_k': kwargs.get('top_k', 40),  # Reduced for cleaner output
                     'pad_token_id': tokenizer.pad_token_id or tokenizer.eos_token_id,
                     'eos_token_id': tokenizer.eos_token_id,
-                    'repetition_penalty': kwargs.get('repetition_penalty', 1.15),  # Slightly reduced to avoid over-penalization
-                    'length_penalty': kwargs.get('length_penalty', 1.0),  # Encourage completeness
+                    'repetition_penalty': kwargs.get('repetition_penalty', 1.2),  # Increased to avoid artifacts
+                    'length_penalty': kwargs.get('length_penalty', 0.9),  # Slight bias toward shorter responses
                     'no_repeat_ngram_size': 3,  # Prevent repetitive patterns
+                    # CRITICAL: Add explicit stopping criteria to prevent training artifacts
+                    'early_stopping': True,
+                    'num_beams': 1,  # Disable beam search for more direct responses
                 }
 
                 # Generate with attention mask
                 with torch.no_grad():
                     if stream:
-                        # Streaming generation for better UX
                         print("🤖 Generating response", end="", flush=True)
 
                     outputs = model.generate(
@@ -267,7 +269,7 @@ class AdaptrixEngine:
                         generated_text = "I apologize, but I couldn't generate a proper response."
 
                     # Apply enhanced post-processing
-                    response = self._post_process_response_gemini_style(generated_text.strip(), context_prompt)
+                    response = self._post_process_response_anti_artifact(generated_text.strip(), context_prompt)
 
                 except Exception as e:
                     logger.error(f"Decoding failed: {e}")
@@ -724,74 +726,9 @@ class AdaptrixEngine:
             return False
         return True
 
-    def _post_process_response_gemini_style(self, response: str, original_prompt: str = "") -> str:
-        """
-        Enhanced post-processing for high-quality, structured responses.
-        """
-        try:
-            from .prompt_templates import PromptTemplateManager, ResponseFormatter
-
-            if not response:
-                return "I apologize, but I couldn't generate a response."
-
-            # First, handle encoding issues robustly
-            response = self._clean_encoding_issues(response)
-
-            # Determine domain for formatting - IMPROVED FLEXIBLE DETECTION
-            current_adapter = None
-            if hasattr(self, 'dynamic_loader') and self.dynamic_loader:
-                loaded_adapters = self.dynamic_loader.get_loaded_adapters()
-                if loaded_adapters:
-                    current_adapter = list(loaded_adapters.keys())[0]
-
-            # Enhanced adapter to domain mapping - works for current and future adapters
-            domain = self._detect_domain_from_adapter(current_adapter, original_prompt)
-
-            # Remove template artifacts and clean up
-            response = self._remove_template_artifacts(response)
-
-            # Apply domain-specific formatting
-            response = ResponseFormatter.format_response(response, domain)
-
-            # Simple markdown compliance polish
-            response = self._apply_simple_markdown_polish(response, domain)
-
-            return response
-
-        except Exception as e:
-            logger.error(f"Enhanced post-processing failed: {e}")
-            return self._post_process_response(response, original_prompt)
-
-    def _apply_simple_markdown_polish(self, response: str, domain: str) -> str:
-        """Apply simple markdown formatting polish without complex parsing."""
-        if not response:
-            return response
-
-        # Simple code block detection and wrapping
-        if domain == 'programming' and ('def ' in response or 'function ' in response or 'class ' in response):
-            if '```' not in response:
-                # Simple heuristic: if it looks like mostly code, wrap it
-                lines = response.split('\n')
-                code_indicators = sum(1 for line in lines if any(indicator in line for indicator in ['def ', 'class ', 'function ', 'import ', 'from ', '=', '(', ')']))
-                
-                if code_indicators > len(lines) // 3:  # More than 1/3 of lines look like code
-                    response = f"```python\n{response}\n```"
-
-        # Ensure proper capitalization
-        if response and not response[0].isupper() and response[0] not in ['`', '#', '"', "'"]:
-            response = response[0].upper() + response[1:]
-
-        # Ensure proper ending
-        if response and not response.endswith(('.', '!', '?', ':', '```', '"', '\n')):
-            response += '.'
-
-        return response.strip()
-
     def _apply_domain_prompt_engineering(self, prompt: str) -> str:
-        """Apply domain-specific prompt engineering with markdown formatting instructions."""
+        """Apply direct, task-focused prompts that avoid training artifacts."""
         try:
-            from .prompt_templates import PromptTemplateManager
-
             # Get current adapter info
             current_adapter = None
             if hasattr(self, 'dynamic_loader') and self.dynamic_loader:
@@ -802,41 +739,123 @@ class AdaptrixEngine:
             # Detect domain
             domain = self._detect_domain_from_adapter(current_adapter, prompt)
 
-            # Add markdown formatting instructions based on domain
+            # Direct, task-focused prompts without meta-instructions
             if domain == 'programming':
-                enhanced_prompt = f"""Please provide a well-formatted response with proper markdown formatting. For any code, use appropriate code blocks with language specification (```python, ```javascript, etc.). Include clear explanations before code blocks.
-
-{prompt}
-
-Please format your response using proper markdown with code blocks and clear structure."""
+                # Direct task specification - no instruction artifacts
+                enhanced_prompt = f"{prompt}\n\nProvide code in ```python blocks with brief explanations."
 
             elif domain == 'mathematics':
-                enhanced_prompt = f"""Please provide a well-formatted mathematical response using proper markdown formatting. Use step-by-step explanations and clear mathematical notation.
-
-{prompt}
-
-Please format your response with clear steps and mathematical expressions."""
+                # Direct mathematical task
+                enhanced_prompt = f"{prompt}\n\nShow calculations step by step."
 
             elif domain == 'journalism':
-                enhanced_prompt = f"""Please provide a well-formatted journalistic response using proper markdown formatting with headlines and structured content.
-
-{prompt}
-
-Please format your response with proper headlines and paragraph structure."""
+                # Direct journalistic task
+                enhanced_prompt = f"{prompt}\n\nWrite in article format with clear structure."
 
             else:
-                enhanced_prompt = f"""Please provide a well-formatted response using proper markdown formatting with clear structure and organization.
+                # Direct general task
+                enhanced_prompt = f"{prompt}\n\nRespond clearly and concisely."
 
-{prompt}
-
-Please format your response clearly and professionally."""
-
-            logger.debug(f"Applied domain-specific prompt engineering for: {domain}")
+            logger.debug(f"Applied direct task prompt for domain: {domain}")
             return enhanced_prompt
 
         except Exception as e:
-            logger.warning(f"Domain prompt engineering failed: {e}")
-            return f"Please provide a well-formatted markdown response:\n\n{prompt}"
+            logger.warning(f"Prompt engineering failed: {e}")
+            # Minimal fallback - just the task
+            return prompt
+
+    def _post_process_response_anti_artifact(self, response: str, original_prompt: str = "") -> str:
+        """
+        Anti-artifact post-processing focused on clean, direct output.
+        """
+        if not response:
+            return "I apologize, but I couldn't generate a response."
+
+        # Clean encoding issues
+        response = self._clean_encoding_issues(response)
+
+        # AGGRESSIVE ARTIFACT REMOVAL - target the specific patterns we found
+        response = self._remove_instruction_leakage(response)
+        
+        # Simple formatting based on domain
+        domain = 'programming' if any(kw in original_prompt.lower() for kw in ['function', 'code', 'python', 'def']) else 'general'
+        response = self._apply_clean_formatting(response, domain)
+
+        return response
+
+    def _remove_instruction_leakage(self, response: str) -> str:
+        """Remove training instruction leakage and system bleeding."""
+        
+        # CRITICAL: Remove the exact patterns we found in the benchmark
+        instruction_patterns = [
+            "The user has asked for help to write",
+            "The user has asked for",
+            "We can assume that all input will be valid",
+            "I will be testing this on my system",
+            "Ensure all responses are in the same style",
+            "The final output should be the content of this response",
+            "Here's what I have so far:",
+            "The task is to create a function called",
+            "Sure! Here's how I would approach",
+            "Certainly! Here's how you can create",
+        ]
+        
+        for pattern in instruction_patterns:
+            if response.startswith(pattern):
+                # Find the first code block or substantial content after the instruction
+                lines = response.split('\n')
+                for i, line in enumerate(lines):
+                    if ('```' in line or 
+                        line.strip().startswith('def ') or 
+                        (len(line.strip()) > 20 and not any(meta in line.lower() for meta in ['approach', 'task', 'user', 'assume']))):
+                        response = '\n'.join(lines[i:])
+                        break
+                else:
+                    # If no code found, remove just the instruction part
+                    response = response[len(pattern):].strip()
+                break
+        
+        # Remove Chinese characters (language contamination)
+        import re
+        response = re.sub(r'[\u4e00-\u9fff]+', '', response)
+        
+        # Remove template footers (but only if they're standalone)
+        footer_patterns = [
+            '"""Generated function:',
+            '    """Generated function:',
+        ]
+        
+        for pattern in footer_patterns:
+            if pattern in response:
+                response = response.split(pattern)[0].strip()
+        
+        return response
+
+    def _apply_clean_formatting(self, response: str, domain: str) -> str:
+        """Apply minimal, clean formatting without triggering artifacts."""
+        if not response:
+            return response
+
+        # For programming domain, ensure code blocks
+        if domain == 'programming' and ('def ' in response or 'class ' in response):
+            if '```' not in response:
+                # Only wrap if it's mostly code
+                lines = response.split('\n')
+                code_lines = sum(1 for line in lines if line.strip() and 
+                               any(indicator in line for indicator in ['def ', 'class ', 'import ', 'return ', '=', '(', ')']))
+                
+                if code_lines > len([l for l in lines if l.strip()]) // 2:  # More than half are code
+                    response = f"```python\n{response}\n```"
+
+        # Ensure proper capitalization
+        if response and response[0].islower() and response[0] not in ['`', '"', "'"]:
+            response = response[0].upper() + response[1:]
+
+        # Clean ending
+        if response and not response.endswith(('.', '!', '?', '```', '\n')):
+            response += '.'
+
+        return response.strip()
 
     def _detect_domain_from_adapter(self, adapter_name: str, prompt: str = "") -> str:
         """
@@ -912,45 +931,6 @@ Please format your response clearly and professionally."""
             logger.error(f"Encoding cleanup failed: {e}")
             return "Error: Response contains invalid characters."
 
-    def _remove_template_artifacts(self, response: str) -> str:
-        """Remove template artifacts and training data leakage."""
-        # Remove common template artifacts
-        artifacts = [
-            'You are a helpful',
-            'Task:',
-            'Instructions:',
-            'Now, solve this',
-            'Now, write the',
-            'Now, generate',
-            'Now, provide',
-            'Here is the step-by-step solution:',
-            'Here is the news report:',
-            'Here is the Python code:',
-            'Here is the response:',
-        ]
-
-        for artifact in artifacts:
-            if response.startswith(artifact):
-                response = response[len(artifact):].strip()
-
-        # Remove training data artifacts
-        training_artifacts = [
-            'Output:',
-            'Input:',
-            'Answer:',
-            'Solution:',
-            'Response:',
-            'Exercise',
-            'Problem',
-            'Example',
-        ]
-
-        for artifact in training_artifacts:
-            if response.startswith(artifact):
-                response = response[len(artifact):].strip()
-
-        return response
-
     def _build_context_prompt(self, current_prompt: str) -> str:
         """
         Build a context-aware prompt using conversation history.
@@ -1017,178 +997,6 @@ Please format your response clearly and professionally."""
         self.use_conversation_context = enabled
         logger.info(f"Conversation context {'enabled' if enabled else 'disabled'}")
 
-    def _post_process_response(self, response: str, original_prompt: str = "") -> str:
-        """
-        Post-process the generated response for better quality and completeness.
-
-        Args:
-            response: Raw generated response
-            original_prompt: Original prompt for context
-
-        Returns:
-            Cleaned and improved response
-        """
-        if not response:
-            return "I apologize, but I couldn't generate a response."
-
-        # First, handle encoding issues
-        try:
-            # Ensure proper UTF-8 encoding
-            if isinstance(response, bytes):
-                response = response.decode('utf-8', errors='replace')
-
-            # Remove null characters and other problematic characters
-            response = response.replace('\x00', '').replace('\ufffd', '')
-
-            # Remove excessive whitespace and newlines
-            response = ' '.join(response.split())
-
-        except Exception as e:
-            logger.warning(f"Encoding cleanup failed: {e}")
-            return "Error: Response contains invalid characters."
-
-        # Remove common artifacts and prefixes
-        response = response.strip()
-
-        # Check for completely garbled output (too many special characters)
-        special_char_ratio = sum(1 for c in response if not c.isalnum() and c not in ' .,!?-:;()[]{}') / max(len(response), 1)
-        if special_char_ratio > 0.3:  # More than 30% special characters
-            logger.warning("Response appears corrupted (too many special characters)")
-            return "I apologize, but the response appears to be corrupted. Please try again."
-
-        # Comprehensive list of training artifacts to remove
-        artifacts_to_remove = [
-            '<|question_end|>',
-            '<|answer_start|>',
-            '<|endoftext|>',
-            '<|im_start|>',
-            '<|im_end|>',
-            '## INPUT',
-            '## OUTPUT',
-            'INPUT:',
-            'OUTPUT:',
-            'Answer:',
-            'Response:',
-            'Solution:',
-            'ANSWER:',
-            'Question:',
-            'Exercise',
-            'Problem',
-            'Example',
-            'S. ',
-            '. ',
-            'Feel free to add more information!',
-            'Here is the',
-            'Here are the',
-            'The answer is',
-            'The solution is',
-        ]
-
-        # Remove artifacts from the beginning
-        original_response = response
-        for artifact in artifacts_to_remove:
-            if response.lower().startswith(artifact.lower()):
-                response = response[len(artifact):].strip()
-                break
-
-        # If response starts with a number followed by a period (like "120."), remove it
-        import re
-        response = re.sub(r'^\d+\.\s*', '', response)
-
-        # Remove code blocks and programming artifacts
-        response = re.sub(r'```[\s\S]*?```', '', response)  # Remove code blocks
-        response = re.sub(r'print\([^)]*\)', '', response)  # Remove print statements
-        response = re.sub(r'def\s+\w+\([^)]*\):', '', response)  # Remove function definitions
-
-        # Clean up multiple spaces and newlines
-        response = re.sub(r'\s+', ' ', response)
-        response = response.strip()
-
-        # If response is too short or empty after cleaning, try to extract meaningful content
-        if len(response) < 10:
-            # Look for the first meaningful sentence in the original response
-            sentences = original_response.split('.')
-            for sentence in sentences:
-                sentence = sentence.strip()
-                if (len(sentence) > 10 and
-                    not any(artifact.lower() in sentence.lower() for artifact in artifacts_to_remove[:10]) and
-                    not re.match(r'^\d+\s', sentence)):
-                    response = sentence
-                    break
-
-        # Remove incomplete fragments at the beginning
-        if response and not response[0].isupper() and not response[0].isdigit() and response[0] != '"':
-            # Find the first complete sentence
-            sentences = response.split('.')
-            if len(sentences) > 1:
-                for i, sentence in enumerate(sentences):
-                    sentence = sentence.strip()
-                    if sentence and (sentence[0].isupper() or sentence[0].isdigit() or sentence[0] == '"'):
-                        response = '.'.join(sentences[i:])
-                        break
-
-        # Remove incomplete sentences at the end
-        sentences = response.split('.')
-        if len(sentences) > 1 and sentences[-1].strip() and len(sentences[-1].strip()) < 20:
-            response = '.'.join(sentences[:-1])
-            if response and not response.endswith('.'):
-                response += '.'
-
-        # Remove repetitive patterns
-        response = self._remove_repetitive_patterns(response)
-
-        # Clean up formatting
-        response = self._clean_formatting(response)
-
-        # Ensure proper capitalization
-        if response and not response[0].isupper() and not response[0].isdigit() and response[0] != '"':
-            response = response[0].upper() + response[1:]
-
-        # Ensure response ends properly
-        if response and not response.endswith(('.', '!', '?', ':', ';', '"')):
-            response += '.'
-
-        # Final cleanup - remove any remaining artifacts
-        response = response.replace('Exercise', '').replace('Problem', '').strip()
-
-        return response
-
-    def _remove_repetitive_patterns(self, text: str) -> str:
-        """Remove repetitive patterns from text."""
-        import re
-
-        # Remove repeated phrases (3+ words repeated)
-        words = text.split()
-        if len(words) < 6:
-            return text
-
-        # Check for repeated 3-word patterns
-        for i in range(len(words) - 5):
-            phrase = ' '.join(words[i:i+3])
-            next_phrase = ' '.join(words[i+3:i+6])
-            if phrase == next_phrase:
-                # Found repetition, truncate
-                return ' '.join(words[:i+3])
-
-        return text
-
-    def _clean_formatting(self, text: str) -> str:
-        """Clean up text formatting."""
-        import re
-
-        # Fix multiple spaces
-        text = re.sub(r'\s+', ' ', text)
-
-        # Fix punctuation spacing
-        text = re.sub(r'\s+([,.!?;:])', r'\1', text)
-        text = re.sub(r'([,.!?;:])\s*([,.!?;:])', r'\1 \2', text)
-
-        # Remove trailing incomplete words
-        if text.endswith(' '):
-            text = text.rstrip()
-
-        return text
-    
     def benchmark_adapter(self, adapter_name: str, test_prompts: List[str]) -> Dict[str, Any]:
         """
         Benchmark an adapter's performance.
