@@ -156,13 +156,13 @@ class AdaptrixEngine:
         
         return self.dynamic_loader.switch_adapter(old_name, new_name)
     
-    def generate(self, prompt: str, max_length: int = 100, use_context: bool = None, stream: bool = False, **kwargs) -> str:
+    def generate(self, prompt: str, max_length: int = 512, use_context: bool = None, stream: bool = False, **kwargs) -> str:
         """
         Generate text using the current model configuration.
 
         Args:
             prompt: Input prompt
-            max_length: Maximum generation length (total tokens, not new tokens)
+            max_length: Maximum generation length (total tokens, not new tokens) - increased default to 512
             use_context: Whether to use conversation context (None for default)
             **kwargs: Additional generation parameters
 
@@ -210,19 +210,19 @@ class AdaptrixEngine:
 
                 # Calculate max_new_tokens from max_length
                 input_length = inputs['input_ids'].shape[1]
-                max_new_tokens = max(10, max_length - input_length)  # Ensure minimum generation
+                max_new_tokens = max(50, max_length - input_length)  # Increased minimum to 50
 
-                # Gemini-level generation parameters for complete, structured responses
+                # Enhanced generation parameters for complete, structured responses
                 generation_kwargs = {
                     'max_new_tokens': max(256, max_new_tokens),  # Ensure sufficient length for complete responses
-                    'min_new_tokens': kwargs.get('min_new_tokens', 20),  # Minimum for meaningful content
+                    'min_new_tokens': kwargs.get('min_new_tokens', 50),  # Increased minimum for meaningful content
                     'do_sample': kwargs.get('do_sample', True),  # Use sampling for natural responses
-                    'temperature': kwargs.get('temperature', 0.7),  # Balanced creativity and accuracy
+                    'temperature': kwargs.get('temperature', 0.8),  # Slightly increased for better creativity
                     'top_p': kwargs.get('top_p', 0.9),  # Nucleus sampling for quality
                     'top_k': kwargs.get('top_k', 50),  # Top-k for diversity
                     'pad_token_id': tokenizer.pad_token_id or tokenizer.eos_token_id,
                     'eos_token_id': tokenizer.eos_token_id,
-                    'repetition_penalty': kwargs.get('repetition_penalty', 1.2),  # Prevent repetition
+                    'repetition_penalty': kwargs.get('repetition_penalty', 1.15),  # Slightly reduced to avoid over-penalization
                     'length_penalty': kwargs.get('length_penalty', 1.0),  # Encourage completeness
                     'no_repeat_ngram_size': 3,  # Prevent repetitive patterns
                 }
@@ -266,7 +266,7 @@ class AdaptrixEngine:
                         logger.warning("Empty generation result")
                         generated_text = "I apologize, but I couldn't generate a proper response."
 
-                    # Apply Gemini-level post-processing
+                    # Apply enhanced post-processing
                     response = self._post_process_response_gemini_style(generated_text.strip(), context_prompt)
 
                 except Exception as e:
@@ -817,7 +817,7 @@ class AdaptrixEngine:
 
     def _post_process_response_gemini_style(self, response: str, original_prompt: str = "") -> str:
         """
-        Gemini-style post-processing for high-quality, structured responses.
+        Enhanced post-processing for high-quality, structured responses.
         """
         try:
             from .prompt_templates import PromptTemplateManager, ResponseFormatter
@@ -828,20 +828,15 @@ class AdaptrixEngine:
             # First, handle encoding issues robustly
             response = self._clean_encoding_issues(response)
 
-            # Determine domain for formatting
+            # Determine domain for formatting - IMPROVED FLEXIBLE DETECTION
             current_adapter = None
             if hasattr(self, 'dynamic_loader') and self.dynamic_loader:
                 loaded_adapters = self.dynamic_loader.get_loaded_adapters()
                 if loaded_adapters:
                     current_adapter = list(loaded_adapters.keys())[0]
 
-            # Map adapter to domain
-            adapter_domain_map = {
-                'math_specialist': 'mathematics',
-                'news_specialist': 'journalism',
-                'code_specialist': 'programming'
-            }
-            domain = adapter_domain_map.get(current_adapter, 'general')
+            # Enhanced adapter to domain mapping - works for current and future adapters
+            domain = self._detect_domain_from_adapter(current_adapter, original_prompt)
 
             # Remove template artifacts and clean up
             response = self._remove_template_artifacts(response)
@@ -855,8 +850,56 @@ class AdaptrixEngine:
             return response
 
         except Exception as e:
-            logger.error(f"Gemini-style post-processing failed: {e}")
+            logger.error(f"Enhanced post-processing failed: {e}")
             return self._post_process_response(response, original_prompt)
+
+    def _detect_domain_from_adapter(self, adapter_name: str, prompt: str = "") -> str:
+        """
+        Flexible domain detection that works with any adapter naming pattern.
+        Future-proof for new adapters.
+        """
+        if not adapter_name:
+            # No adapter loaded, classify from prompt content
+            return self._classify_domain_from_prompt(prompt)
+        
+        adapter_lower = adapter_name.lower()
+        
+        # Flexible pattern matching for adapter domains
+        if any(keyword in adapter_lower for keyword in ['code', 'programming', 'python', 'dev']):
+            return 'programming'
+        elif any(keyword in adapter_lower for keyword in ['math', 'calculator', 'equation']):
+            return 'mathematics'
+        elif any(keyword in adapter_lower for keyword in ['news', 'journalism', 'article']):
+            return 'journalism'
+        else:
+            # Fallback to prompt-based classification
+            return self._classify_domain_from_prompt(prompt)
+    
+    def _classify_domain_from_prompt(self, prompt: str) -> str:
+        """
+        Classify domain based on prompt content when adapter name is unclear.
+        """
+        if not prompt:
+            return 'general'
+            
+        prompt_lower = prompt.lower()
+        
+        # Programming indicators
+        programming_keywords = ['function', 'code', 'python', 'def', 'class', 'algorithm', 'script', 'program', 'implement']
+        if any(keyword in prompt_lower for keyword in programming_keywords):
+            return 'programming'
+        
+        # Math indicators
+        math_keywords = ['calculate', 'solve', 'equation', 'math', 'formula', 'number']
+        if any(keyword in prompt_lower for keyword in math_keywords):
+            return 'mathematics'
+        
+        # News indicators  
+        news_keywords = ['news', 'report', 'article', 'headline', 'breaking']
+        if any(keyword in prompt_lower for keyword in news_keywords):
+            return 'journalism'
+        
+        return 'general'
 
     def _clean_encoding_issues(self, response: str) -> str:
         """Clean encoding and corruption issues."""
@@ -928,48 +971,129 @@ class AdaptrixEngine:
         if not response:
             return response
 
-        # Ensure proper capitalization
-        if response and not response[0].isupper() and not response[0].isdigit() and response[0] != '`':
+        # Ensure proper capitalization (unless starting with code)
+        if response and not response[0].isupper() and not response[0].isdigit() and response[0] not in ['`', '#', '"', "'"]:
             response = response[0].upper() + response[1:]
 
-        # Domain-specific polish
+        # Domain-specific polish with enhanced logic
         if domain == 'programming':
-            # Ensure code blocks are properly formatted
-            if 'def ' in response and '```' not in response:
-                response = f"```python\n{response}\n```"
+            # Enhanced code formatting
+            if any(keyword in response for keyword in ['def ', 'class ', 'import ', 'return ', 'if ', 'for ']):
+                # This looks like code content
+                if '```' not in response:
+                    # Wrap in code block if not already wrapped
+                    if response.startswith('def ') or response.startswith('class ') or response.startswith('import '):
+                        # Pure code response
+                        response = f"```python\n{response}\n```"
+                    else:
+                        # Mixed response with code - look for code sections
+                        lines = response.split('\n')
+                        formatted_lines = []
+                        in_code_section = False
+                        code_section = []
+                        
+                        for line in lines:
+                            line_stripped = line.strip()
+                            # Detect code lines
+                            if any(keyword in line_stripped for keyword in ['def ', 'class ', 'import ', 'from ', 'if ', 'for ', 'while ', 'try:', 'except:']):
+                                if not in_code_section:
+                                    # Starting code section
+                                    if formatted_lines:
+                                        formatted_lines.append('')  # Add space before code
+                                    formatted_lines.append('```python')
+                                    in_code_section = True
+                                formatted_lines.append(line)
+                            elif in_code_section and (line_stripped == '' or line.startswith('    ') or line.startswith('\t')):
+                                # Continue code section (empty line or indented)
+                                formatted_lines.append(line)
+                            else:
+                                # End code section
+                                if in_code_section:
+                                    formatted_lines.append('```')
+                                    formatted_lines.append('')  # Add space after code
+                                    in_code_section = False
+                                formatted_lines.append(line)
+                        
+                        # Close any open code block
+                        if in_code_section:
+                            formatted_lines.append('```')
+                        
+                        response = '\n'.join(formatted_lines)
+                
+                # Ensure code has proper structure
+                if 'def ' in response and '"""' not in response and "'''" not in response:
+                    # Add basic docstring to functions without them
+                    response = self._add_missing_docstrings(response)
 
         elif domain == 'journalism':
-            # Ensure proper news structure
-            if not response.startswith('#') and len(response.split('\n')[0]) < 100:
+            # Enhanced news formatting
+            if not response.startswith('#') and '\n' in response:
                 lines = response.split('\n')
-                if lines[0]:
-                    lines[0] = f"# {lines[0]}"
+                # Check if first line could be a headline
+                first_line = lines[0].strip()
+                if first_line and len(first_line) < 100 and not first_line.endswith('.'):
+                    lines[0] = f"# {first_line}"
                     response = '\n'.join(lines)
 
         elif domain == 'mathematics':
-            # Ensure clear mathematical presentation
-            if '=' in response and 'Step' not in response:
-                # Add step structure if missing
+            # Enhanced math formatting
+            if '=' in response and 'Step' not in response and 'step' not in response:
+                # Add step structure if missing for clearer presentation
                 lines = response.split('\n')
                 formatted_lines = []
                 step_count = 1
 
                 for line in lines:
                     line = line.strip()
-                    if '=' in line and len(line) > 5:
-                        formatted_lines.append(f"Step {step_count}: {line}")
+                    if '=' in line and len(line) > 5 and not line.startswith('Step'):
+                        formatted_lines.append(f"**Step {step_count}:** {line}")
                         step_count += 1
                     elif line:
                         formatted_lines.append(line)
 
-                if formatted_lines:
+                if step_count > 1:  # Only apply if we found actual steps
                     response = '\n'.join(formatted_lines)
 
-        # Ensure proper ending
-        if response and not response.endswith(('.', '!', '?', ':', '```', '"')):
-            response += '.'
+        # Ensure proper ending punctuation (but not for code blocks)
+        if response and not response.endswith(('.', '!', '?', ':', '```', '"', '\n')):
+            # Don't add period if last line looks like code or a list item
+            last_line = response.split('\n')[-1].strip()
+            if not (last_line.startswith('- ') or last_line.startswith('* ') or 
+                    any(keyword in last_line for keyword in ['def ', 'class ', 'import ', 'return '])):
+                response += '.'
 
         return response
+    
+    def _add_missing_docstrings(self, response: str) -> str:
+        """Add basic docstrings to functions that don't have them."""
+        lines = response.split('\n')
+        result_lines = []
+        i = 0
+        
+        while i < len(lines):
+            line = lines[i]
+            result_lines.append(line)
+            
+            # Check if this is a function definition
+            if 'def ' in line and '(' in line and ')' in line and ':' in line:
+                # Look ahead to see if next non-empty line is a docstring
+                j = i + 1
+                while j < len(lines) and lines[j].strip() == '':
+                    j += 1
+                
+                if j < len(lines):
+                    next_line = lines[j].strip()
+                    if not (next_line.startswith('"""') or next_line.startswith("'''")):
+                        # No docstring found, add a basic one
+                        function_name = line.split('def ')[1].split('(')[0]
+                        indent = '    ' if not line.startswith('    ') else '        '
+                        result_lines.append(f'{indent}"""')
+                        result_lines.append(f'{indent}{function_name.replace("_", " ").title()} function.')
+                        result_lines.append(f'{indent}"""')
+            
+            i += 1
+        
+        return '\n'.join(result_lines)
 
     def _post_process_response(self, response: str, original_prompt: str = "") -> str:
         """
