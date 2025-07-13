@@ -1,0 +1,17 @@
+Machine Learning is a subset of artificial intelligence that enables computers to learn
+and make decisions from data without being explicitly programmed.
+
+Types of Machine Learning:
+1. Supervised Learning - Learning with labeled data
+2. Unsupervised Learning - Finding patterns in unlabeled data
+3. Reinforcement Learning - Learning through interaction and feedback
+
+Common algorithms include:
+- Linear Regression
+- Decision Trees
+- Neural Networks
+- Support Vector Machines
+- Random Forest
+
+Machine learning is used in recommendation systems, image recognition, 
+natural language processing, and predictive analytics.

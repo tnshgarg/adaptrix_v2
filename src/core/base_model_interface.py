@@ -238,30 +238,78 @@ class ModelFactory:
     """Factory for creating model instances."""
     
     @staticmethod
-    def create_model(model_id: str, device: str = "cpu") -> BaseModelInterface:
-        """Create a model instance with automatic detection."""
-        
+    def create_model(
+        model_id: str,
+        device: str = "cpu",
+        use_vllm: bool = False,
+        vllm_config: Optional[Any] = None,
+        quantization_config: Optional[Any] = None,
+        **kwargs
+    ) -> BaseModelInterface:
+        """
+        Create a model instance with automatic detection.
+
+        Args:
+            model_id: HuggingFace model identifier
+            device: Device to run the model on
+            use_vllm: Whether to use vLLM for inference
+            vllm_config: vLLM configuration
+            quantization_config: Quantization configuration
+            **kwargs: Additional model configuration
+        """
+
         # First try registry
         model = ModelRegistry.get_model(model_id, device)
         if model:
             return model
-        
-        # Auto-detect and create
+
+        # Auto-detect and create config
         config = ModelDetector.create_config_from_model_id(model_id, device)
-        
+
+        # Use vLLM if requested and available
+        if use_vllm:
+            try:
+                from ..inference.vllm_engine import VLLMModelAdapter, VLLMConfig
+                from ..inference.quantization import QuantizationManager
+
+                # Create vLLM config
+                if vllm_config is None:
+                    vllm_config = VLLMConfig(
+                        model_id=model_id,
+                        tensor_parallel_size=1,
+                        gpu_memory_utilization=0.9,
+                        enable_lora=True,
+                        enable_prefix_caching=True
+                    )
+
+                    # Apply quantization if configured
+                    if quantization_config:
+                        quant_manager = QuantizationManager()
+                        quant_param = quant_manager.get_vllm_quantization_param(quantization_config)
+                        if quant_param:
+                            vllm_config.quantization = quant_param
+
+                return VLLMModelAdapter(config, vllm_config)
+
+            except ImportError:
+                logger.warning("vLLM not available, falling back to standard model")
+
         # Import and create appropriate implementation
         if config.model_family == ModelFamily.QWEN:
             from .models.qwen_model import QwenModel
             return QwenModel(config)
         elif config.model_family == ModelFamily.PHI:
-            from .models.phi_model import PhiModel
-            return PhiModel(config)
+            # Use generic model since phi_model doesn't exist
+            from .models.generic_model import GenericModel
+            return GenericModel(config)
         elif config.model_family == ModelFamily.LLAMA:
-            from .models.llama_model import LlamaModel
-            return LlamaModel(config)
+            # Use generic model since llama_model doesn't exist
+            from .models.generic_model import GenericModel
+            return GenericModel(config)
         elif config.model_family == ModelFamily.MISTRAL:
-            from .models.mistral_model import MistralModel
-            return MistralModel(config)
+            # Use generic model since mistral_model doesn't exist
+            from .models.generic_model import GenericModel
+            return GenericModel(config)
         else:
             # Fallback to generic implementation
             from .models.generic_model import GenericModel

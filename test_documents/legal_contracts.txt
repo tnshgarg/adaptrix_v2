@@ -1,0 +1,18 @@
+A legal contract is a binding agreement between two or more parties that is enforceable by law.
+Essential elements of a valid contract include offer, acceptance, consideration, and legal capacity.
+
+Types of contracts:
+- Express contracts (explicitly stated terms)
+- Implied contracts (inferred from conduct)
+- Bilateral contracts (mutual promises)
+- Unilateral contracts (one-sided promise)
+
+Important contract clauses:
+- Termination clauses
+- Liability limitations
+- Confidentiality provisions
+- Dispute resolution mechanisms
+- Force majeure clauses
+
+Contract law varies by jurisdiction and requires careful consideration of
+local regulations and precedents.
