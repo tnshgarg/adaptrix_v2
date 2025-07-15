@@ -1,0 +1,28 @@
+#!/usr/bin/env python3
+"""
+Adaptrix CLI entry point script.
+
+This script provides the main entry point for the Adaptrix CLI tool.
+"""
+
+import sys
+import os
+from pathlib import Path
+
+# Add project root to path
+project_root = Path(__file__).parent
+sys.path.insert(0, str(project_root))
+
+try:
+    from src.cli.main import cli
+    
+    if __name__ == "__main__":
+        cli()
+except ImportError as e:
+    print(f"Error: Failed to import Adaptrix CLI: {e}")
+    print("Please ensure all dependencies are installed:")
+    print("  pip install -r src/cli/requirements.txt")
+    sys.exit(1)
+except Exception as e:
+    print(f"Error: {e}")
+    sys.exit(1)

@@ -1,13 +1,33 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { ArrowRight, Play, Sparkles, Zap, Brain } from "lucide-react";
+import {
+  ArrowRight,
+  Play,
+  Sparkles,
+  Zap,
+  Brain,
+  Terminal,
+  Download,
+  Copy,
+} from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { SignUpButton, useUser } from "@clerk/nextjs";
+import { useState } from "react";
 
 export function HeroSection() {
   const { isSignedIn } = useUser();
+  const [copied, setCopied] = useState(false);
+
+  const installCommand =
+    "curl -sSL https://raw.githubusercontent.com/adaptrix/adaptrix/main/install_adaptrix_cli.sh | bash";
+
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(installCommand);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   return (
     <section className="relative min-h-screen flex items-center justify-center overflow-hidden">
@@ -97,6 +117,7 @@ export function HeroSection() {
               { icon: Brain, text: "100% Accurate Classification" },
               { icon: Zap, text: "vLLM Optimized" },
               { icon: ArrowRight, text: "Plug & Play Adapters" },
+              { icon: Terminal, text: "Powerful CLI Tool" },
             ].map((feature, index) => (
               <div
                 key={index}
@@ -135,6 +156,52 @@ export function HeroSection() {
               <Play className="w-5 h-5 mr-2" />
               Watch Demo
             </Button>
+          </motion.div>
+
+          {/* CLI Installation Section */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.8, duration: 0.8 }}
+            className="mt-12 p-6 rounded-2xl bg-gray-900 dark:bg-gray-800 border border-gray-700"
+          >
+            <div className="flex items-center justify-center mb-4">
+              <Terminal className="w-6 h-6 text-green-400 mr-3" />
+              <h3 className="text-lg font-semibold text-white">
+                Install Adaptrix CLI
+              </h3>
+            </div>
+            <p className="text-gray-300 text-center mb-4">
+              Get started with our powerful command-line interface in seconds
+            </p>
+            <div className="flex items-center justify-between bg-gray-800 dark:bg-gray-700 rounded-lg p-4 font-mono text-sm">
+              <code className="text-green-400 flex-1 overflow-x-auto">
+                {installCommand}
+              </code>
+              <Button
+                onClick={copyToClipboard}
+                variant="ghost"
+                size="sm"
+                className="ml-3 text-gray-300 hover:text-white"
+              >
+                {copied ? (
+                  <>
+                    <Download className="w-4 h-4 mr-2" />
+                    Copied!
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4 mr-2" />
+                    Copy
+                  </>
+                )}
+              </Button>
+            </div>
+            <div className="mt-4 text-center">
+              <p className="text-xs text-gray-400">
+                Works on macOS, Linux, and Windows (WSL)
+              </p>
+            </div>
           </motion.div>
 
           {/* Stats */}

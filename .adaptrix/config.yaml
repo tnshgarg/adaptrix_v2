@@ -1,0 +1,29 @@
+adapters:
+  auto_discover: true
+  directory: /Users/tanish/.adaptrix/adapters
+  registry_url: https://adaptrix.ai/api/adapters
+inference:
+  device: auto
+  max_memory: 4GB
+  max_tokens: 1024
+  precision: fp16
+  temperature: '0.8'
+logging:
+  directory: /Users/tanish/.adaptrix/logs
+  level: INFO
+  max_files: 10
+models:
+  auto_download: true
+  default_model: qwen/qwen3-1.7b
+  directory: /Users/tanish/.adaptrix/models
+  max_size_gb: 10
+rag:
+  chunk_overlap: 50
+  chunk_size: 512
+  directory: /Users/tanish/.adaptrix/rag
+  embedding_model: all-MiniLM-L6-v2
+  vector_store_type: faiss
+ui:
+  color: true
+  progress_bars: true
+  rich_output: true
