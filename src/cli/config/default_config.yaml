@@ -1,0 +1,74 @@
+# Default configuration for Adaptrix CLI
+
+models:
+  directory: "~/.adaptrix/models"
+  max_size_gb: 10
+  default_model: "qwen/qwen3-1.7b"
+  auto_download: true
+  supported_models:
+    - "qwen/qwen3-1.7b"
+    - "microsoft/phi-2"
+    - "microsoft/phi-3-mini"
+    - "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+
+adapters:
+  directory: "~/.adaptrix/adapters"
+  registry_url: "https://adaptrix.ai/api/adapters"
+  auto_discover: true
+  builtin_adapters:
+    - name: "code_generator"
+      description: "Code generation and debugging"
+      domain: "programming"
+    - name: "math_solver"
+      description: "Mathematical problem solving"
+      domain: "mathematics"
+    - name: "legal_analyzer"
+      description: "Legal document analysis"
+      domain: "legal"
+    - name: "general_assistant"
+      description: "General purpose assistant"
+      domain: "general"
+
+rag:
+  directory: "~/.adaptrix/rag"
+  vector_store_type: "faiss"
+  embedding_model: "all-MiniLM-L6-v2"
+  chunk_size: 512
+  chunk_overlap: 50
+  max_documents: 10000
+  supported_formats:
+    - "txt"
+    - "pdf"
+    - "docx"
+    - "md"
+
+inference:
+  device: "auto"
+  max_memory: "4GB"
+  precision: "fp16"
+  max_tokens: 1024
+  temperature: 0.7
+  top_p: 0.9
+  top_k: 50
+  repetition_penalty: 1.1
+
+logging:
+  directory: "~/.adaptrix/logs"
+  level: "INFO"
+  max_files: 10
+  max_file_size: "10MB"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+ui:
+  color: true
+  progress_bars: true
+  rich_output: true
+  table_style: "simple"
+  max_table_width: 120
+
+build:
+  output_directory: "~/.adaptrix/builds"
+  export_formats:
+    - "yaml"
+    - "json"
+  include_metadata: true

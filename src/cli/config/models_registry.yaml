@@ -1,0 +1,109 @@
+# Registry of supported models for Adaptrix CLI
+
+models:
+  qwen/qwen3-1.7b:
+    name: "Qwen3 1.7B"
+    description: "Qwen3 1.7B parameter model optimized for efficiency"
+    parameters: 1.7
+    size_gb: 3.4
+    architecture: "qwen"
+    supported_adapters:
+      - "code_generator"
+      - "math_solver"
+      - "general_assistant"
+    download_url: "https://huggingface.co/Qwen/Qwen3-1.7B"
+    license: "Apache 2.0"
+    
+  microsoft/phi-2:
+    name: "Phi-2"
+    description: "Microsoft Phi-2 2.7B parameter model"
+    parameters: 2.7
+    size_gb: 5.4
+    architecture: "phi"
+    supported_adapters:
+      - "code_generator"
+      - "math_solver"
+      - "general_assistant"
+    download_url: "https://huggingface.co/microsoft/phi-2"
+    license: "MIT"
+    
+  TinyLlama/TinyLlama-1.1B-Chat-v1.0:
+    name: "TinyLlama 1.1B Chat"
+    description: "TinyLlama 1.1B parameter chat model"
+    parameters: 1.1
+    size_gb: 2.2
+    architecture: "llama"
+    supported_adapters:
+      - "general_assistant"
+      - "code_generator"
+    download_url: "https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+    license: "Apache 2.0"
+
+# Model families and their characteristics
+model_families:
+  qwen:
+    description: "Qwen model family by Alibaba"
+    target_modules:
+      - "self_attn.q_proj"
+      - "self_attn.k_proj"
+      - "self_attn.v_proj"
+      - "self_attn.o_proj"
+      - "mlp.gate_proj"
+      - "mlp.up_proj"
+      - "mlp.down_proj"
+    injection_layers: [6, 12, 18]
+    
+  phi:
+    description: "Phi model family by Microsoft"
+    target_modules:
+      - "self_attn.q_proj"
+      - "self_attn.k_proj"
+      - "self_attn.v_proj"
+      - "self_attn.dense"
+      - "mlp.fc1"
+      - "mlp.fc2"
+    injection_layers: [8, 16, 24]
+    
+  llama:
+    description: "LLaMA model family"
+    target_modules:
+      - "self_attn.q_proj"
+      - "self_attn.k_proj"
+      - "self_attn.v_proj"
+      - "self_attn.o_proj"
+      - "mlp.gate_proj"
+      - "mlp.up_proj"
+      - "mlp.down_proj"
+    injection_layers: [6, 12, 18]
+
+# Adapter compatibility matrix
+adapter_compatibility:
+  code_generator:
+    compatible_models:
+      - "qwen/qwen3-1.7b"
+      - "microsoft/phi-2"
+      - "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+    recommended_models:
+      - "qwen/qwen3-1.7b"
+      - "microsoft/phi-2"
+      
+  math_solver:
+    compatible_models:
+      - "qwen/qwen3-1.7b"
+      - "microsoft/phi-2"
+    recommended_models:
+      - "microsoft/phi-2"
+      
+  legal_analyzer:
+    compatible_models:
+      - "qwen/qwen3-1.7b"
+    recommended_models:
+      - "qwen/qwen3-1.7b"
+      
+  general_assistant:
+    compatible_models:
+      - "qwen/qwen3-1.7b"
+      - "microsoft/phi-2"
+      - "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+    recommended_models:
+      - "qwen/qwen3-1.7b"
