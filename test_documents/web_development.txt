@@ -1,0 +1,20 @@
+Web development involves creating websites and web applications for the internet.
+It consists of two main areas: frontend and backend development.
+
+Frontend Development:
+- HTML for structure
+- CSS for styling
+- JavaScript for interactivity
+- Frameworks like React, Vue, Angular
+
+Backend Development:
+- Server-side languages (Python, Java, Node.js)
+- Databases (MySQL, PostgreSQL, MongoDB)
+- APIs and web services
+- Cloud platforms (AWS, Azure, GCP)
+
+Modern web development also includes:
+- Responsive design
+- Progressive Web Apps
+- DevOps practices
+- Security considerations

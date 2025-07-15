@@ -4,6 +4,10 @@ transformers>=4.35.0
 peft>=0.6.0
 accelerate>=0.24.0
 
+# Inference Optimization
+vllm>=0.8.4
+bitsandbytes>=0.41.0
+
 # Data Processing
 numpy>=1.24.0
 pandas>=2.0.0
@@ -14,10 +18,20 @@ datasets>=2.14.0
 sentence-transformers>=2.2.0
 tokenizers>=0.14.0
 
+# RAG and Vector Store
+faiss-cpu>=1.7.0
+# faiss-gpu>=1.7.0  # Uncomment for GPU support
+
 # Web Interface
 gradio>=4.0.0
 fastapi>=0.104.0
 uvicorn>=0.24.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+plotly>=5.17.0
+
+# Training and Fine-tuning
+trl>=0.7.0
 
 # CLI and Configuration
 click>=8.0.0

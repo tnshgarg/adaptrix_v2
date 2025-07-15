@@ -6,10 +6,11 @@ import logging
 import time
 import torch
 from typing import Dict, List, Optional, Any
-from ..models.base_model import BaseModelManager
-from ..injection.layer_injector import LayerInjector
+from .base_model import BaseModelManager
+from .layer_injector import LayerInjector
 from ..adapters.adapter_manager import AdapterManager
 from ..core.dynamic_loader import DynamicLoader
+from ..composition.adapter_composer import AdapterComposer, CompositionStrategy
 from ..utils.config import config
 from ..utils.helpers import timer, get_memory_info
 
@@ -42,11 +43,17 @@ class AdaptrixEngine:
         # These will be initialized after model loading
         self.layer_injector: Optional[LayerInjector] = None
         self.dynamic_loader: Optional[DynamicLoader] = None
+        self.adapter_composer: Optional[AdapterComposer] = None
         
         # State tracking
         self._initialized = False
         self._model_loaded = False
-        
+
+        # Conversation memory
+        self.conversation_history = []
+        self.max_history_length = 10  # Keep last 10 exchanges
+        self.use_conversation_context = True
+
         logger.info("AdaptrixEngine initialized")
 
     @property
@@ -79,9 +86,16 @@ class AdaptrixEngine:
                 # Initialize dynamic loader
                 logger.info("Initializing dynamic loader...")
                 self.dynamic_loader = DynamicLoader(self.layer_injector, self.adapter_manager)
+
+                # Initialize adapter composer
+                logger.info("Initializing adapter composer...")
+                self.adapter_composer = AdapterComposer(self.layer_injector, self.adapter_manager)
                 
                 # Detect model architecture and set appropriate modules
                 target_layers, target_modules = self._detect_model_architecture(model)
+
+                # Set the detected target modules in the layer injector
+                self.layer_injector.set_target_modules(target_modules)
 
                 for layer_idx in target_layers:
                     for module_name in target_modules:
@@ -142,53 +156,128 @@ class AdaptrixEngine:
         
         return self.dynamic_loader.switch_adapter(old_name, new_name)
     
-    def generate(self, prompt: str, max_length: int = 100, **kwargs) -> str:
+    def generate(self, prompt: str, max_length: int = 512, use_context: bool = None, stream: bool = False, **kwargs) -> str:
         """
         Generate text using the current model configuration.
-        
+
         Args:
             prompt: Input prompt
-            max_length: Maximum generation length
+            max_length: Maximum generation length (total tokens, not new tokens) - increased default to 512
+            use_context: Whether to use conversation context (None for default)
             **kwargs: Additional generation parameters
-            
+
         Returns:
             Generated text
         """
         if not self._check_initialized():
             return ""
-        
+
         try:
             with timer("Text generation"):
-                # Tokenize input
+                # Determine if we should use context
+                if use_context is None:
+                    use_context = self.use_conversation_context
+
+                # Apply domain-specific prompt engineering
+                enhanced_prompt = self._apply_domain_prompt_engineering(prompt)
+
+                # Build context-aware prompt
+                if use_context and self.conversation_history:
+                    context_prompt = self._build_context_prompt(enhanced_prompt)
+                else:
+                    context_prompt = enhanced_prompt
+
+                # Tokenize input with proper attention mask
                 tokenizer = self.base_model_manager.tokenizer
                 model = self.base_model_manager.model
-                
-                inputs = tokenizer.encode(prompt, return_tensors="pt")
-                inputs = inputs.to(self.base_model_manager.device)
-                
-                # Set generation parameters
+
+                # Proper tokenization with robust encoding handling
+                inputs = tokenizer(
+                    context_prompt,
+                    return_tensors="pt",
+                    padding=True,
+                    truncation=True,
+                    max_length=512,
+                    add_special_tokens=True,
+                    return_attention_mask=True
+                )
+                inputs = {k: v.to(self.base_model_manager.device) for k, v in inputs.items()}
+
+                # Validate tokenization
+                if inputs['input_ids'].shape[1] == 0:
+                    logger.error("Empty tokenization result")
+                    return "Error: Failed to tokenize input"
+
+                # Calculate max_new_tokens from max_length
+                input_length = inputs['input_ids'].shape[1]
+                max_new_tokens = max(50, max_length - input_length)
+
+                # RESTORED QUALITY GENERATION PARAMETERS
                 generation_kwargs = {
-                    'max_length': max_length,
+                    'max_new_tokens': max(256, max_new_tokens),
+                    'min_new_tokens': kwargs.get('min_new_tokens', 50),  # Restored for complete responses
                     'do_sample': kwargs.get('do_sample', True),
-                    'temperature': kwargs.get('temperature', 0.7),
-                    'top_p': kwargs.get('top_p', 0.9),
-                    'pad_token_id': tokenizer.eos_token_id,
-                    **kwargs
+                    'temperature': kwargs.get('temperature', 0.8),  # Restored for creativity
+                    'top_p': kwargs.get('top_p', 0.9),  # Restored for quality
+                    'top_k': kwargs.get('top_k', 50),  # Restored for diversity
+                    'pad_token_id': tokenizer.pad_token_id or tokenizer.eos_token_id,
+                    'eos_token_id': tokenizer.eos_token_id,
+                    'repetition_penalty': kwargs.get('repetition_penalty', 1.15),  # Balanced
+                    'length_penalty': kwargs.get('length_penalty', 1.0),  # Encourage completeness
+                    'no_repeat_ngram_size': 3,  # Prevent repetitive patterns
                 }
-                
-                # Generate
+
+                # Generate with attention mask
                 with torch.no_grad():
-                    outputs = model.generate(inputs, **generation_kwargs)
-                
-                # Decode output
-                generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-                
-                # Remove input prompt from output
-                if generated_text.startswith(prompt):
-                    generated_text = generated_text[len(prompt):].strip()
-                
-                return generated_text
-                
+                    if stream:
+                        print("🤖 Generating response", end="", flush=True)
+
+                    outputs = model.generate(
+                        inputs['input_ids'],
+                        attention_mask=inputs.get('attention_mask'),
+                        **generation_kwargs
+                    )
+
+                    if stream:
+                        print(" ✅")
+
+                # Robust decoding with error handling
+                try:
+                    new_tokens = outputs[0][input_length:]
+
+                    # Log token info for debugging
+                    logger.debug(f"Generated {len(new_tokens)} new tokens")
+
+                    # Safe decoding with fallback
+                    try:
+                        generated_text = tokenizer.decode(
+                            new_tokens,
+                            skip_special_tokens=True,
+                            clean_up_tokenization_spaces=True,
+                            errors="replace"  # Replace invalid characters instead of failing
+                        )
+                    except UnicodeDecodeError as e:
+                        logger.warning(f"Unicode decode error: {e}, using fallback")
+                        generated_text = tokenizer.decode(new_tokens, skip_special_tokens=True, errors="ignore")
+
+                    # Validate decoded text
+                    if not generated_text or len(generated_text.strip()) == 0:
+                        logger.warning("Empty generation result")
+                        generated_text = "I apologize, but I couldn't generate a proper response."
+
+                    # Apply MINIMAL post-processing - only target specific artifacts
+                    response = self._post_process_response_minimal_cleanup(generated_text.strip(), context_prompt)
+
+                except Exception as e:
+                    logger.error(f"Decoding failed: {e}")
+                    response = "Error: Failed to decode response properly."
+
+                # Add to conversation history
+                if use_context:
+                    self._add_to_history(prompt, response)
+
+                return response
+
         except Exception as e:
             logger.error(f"Error during generation: {e}")
             return ""
@@ -285,11 +374,205 @@ class AdaptrixEngine:
             status['available_adapters'] = self.list_adapters()
             status['memory_usage'] = self.dynamic_loader.get_memory_usage()
             status['active_injection_points'] = self.layer_injector.get_active_adapters()
-        
+
+            # Add composition system status
+            if self.adapter_composer:
+                status['composition_stats'] = self.adapter_composer.get_composition_stats()
+
         # Add system memory info
         status['system_memory'] = get_memory_info()
-        
+
         return status
+
+    # Revolutionary Multi-Adapter Composition Methods
+
+    def compose_adapters(self,
+                        adapters: List[str],
+                        strategy: Optional[CompositionStrategy] = None,
+                        **kwargs) -> Dict[str, Any]:
+        """
+        🚀 REVOLUTIONARY FEATURE: Compose multiple adapters for enhanced intelligence.
+
+        This is the core innovation that sets Adaptrix apart - the ability to combine
+        multiple specialized adapters in sophisticated ways to create emergent capabilities.
+
+        Args:
+            adapters: List of adapter names to compose
+            strategy: Composition strategy (auto-selected if None)
+            **kwargs: Additional composition parameters
+
+        Returns:
+            Dictionary with composition results and metadata
+        """
+        if not self._check_initialized():
+            return {'error': 'Engine not initialized'}
+
+        if not self.adapter_composer:
+            return {'error': 'Adapter composer not available'}
+
+        try:
+            # Load all requested adapters
+            loaded_adapters = []
+            for adapter_name in adapters:
+                if self.load_adapter(adapter_name):
+                    loaded_adapters.append(adapter_name)
+                else:
+                    logger.warning(f"Failed to load adapter {adapter_name}")
+
+            if not loaded_adapters:
+                return {'error': 'No adapters could be loaded'}
+
+            # Perform composition
+            result = self.adapter_composer.compose_adapters(loaded_adapters, strategy, kwargs)
+
+            return {
+                'success': True,
+                'strategy': result.strategy_used.value,
+                'adapters_used': loaded_adapters,
+                'confidence': result.confidence_scores,
+                'weights': result.composition_weights,
+                'processing_time': result.processing_time,
+                'metadata': result.metadata
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to compose adapters: {e}")
+            return {'error': str(e)}
+
+    def generate_with_composition(self,
+                                 prompt: str,
+                                 adapters: List[str],
+                                 strategy: Optional[CompositionStrategy] = None,
+                                 max_length: int = 100,
+                                 temperature: float = 0.7,
+                                 **kwargs) -> str:
+        """
+        🚀 Generate text using multi-adapter composition for enhanced capabilities.
+
+        This method showcases the revolutionary power of Adaptrix by combining
+        multiple specialized adapters during text generation.
+
+        Args:
+            prompt: Input prompt
+            adapters: List of adapters to compose
+            strategy: Composition strategy
+            max_length: Maximum generation length
+            temperature: Generation temperature
+            **kwargs: Additional generation parameters
+
+        Returns:
+            Generated text with enhanced capabilities
+        """
+        if not self._check_initialized():
+            return "Error: Engine not initialized"
+
+        try:
+            # Set up composition (filter out generation-specific kwargs)
+            composition_kwargs = {k: v for k, v in kwargs.items()
+                                if k in ['weights', 'confidence_threshold', 'max_adapters',
+                                        'enable_conflict_resolution', 'enable_attention_weighting']}
+            composition_result = self.compose_adapters(adapters, strategy, **composition_kwargs)
+
+            if not composition_result.get('success'):
+                logger.warning(f"Composition failed: {composition_result.get('error')}")
+                # Fallback to single adapter or base model
+                if adapters:
+                    self.load_adapter(adapters[0])
+                return self.generate(prompt, max_length, temperature)
+
+            # Generate with composed adapters
+            logger.info(f"Generating with {len(adapters)} composed adapters using {composition_result['strategy']} strategy")
+
+            # The actual generation happens with all adapters active
+            # The composition system has already set up the optimal combination
+            generated_text = self.generate(prompt, max_length, temperature)
+
+            # Add composition metadata to the response
+            composition_info = f"\n\n[Composed using {composition_result['strategy']} strategy with {len(adapters)} adapters]"
+
+            return generated_text + composition_info
+
+        except Exception as e:
+            logger.error(f"Failed to generate with composition: {e}")
+            return f"Error: {str(e)}"
+
+    def get_composition_recommendations(self,
+                                      available_adapters: Optional[List[str]] = None,
+                                      task_context: Optional[str] = None) -> Dict[str, Any]:
+        """
+        🚀 Get intelligent recommendations for adapter composition.
+
+        Args:
+            available_adapters: List of available adapters (None for all)
+            task_context: Context about the task to optimize for
+
+        Returns:
+            Dictionary with composition recommendations
+        """
+        if not self._check_initialized() or not self.adapter_composer:
+            return {'error': 'System not ready'}
+
+        try:
+            if available_adapters is None:
+                available_adapters = self.list_adapters()
+
+            recommendations = {}
+
+            # Get recommendations for different numbers of adapters
+            for num_adapters in [2, 3, 4, 5]:
+                if len(available_adapters) >= num_adapters:
+                    # Select top adapters (could be enhanced with more sophisticated selection)
+                    selected_adapters = available_adapters[:num_adapters]
+
+                    # Get strategy recommendation
+                    recommended_strategy = self.adapter_composer.recommend_composition_strategy(selected_adapters)
+
+                    recommendations[f"{num_adapters}_adapters"] = {
+                        'adapters': selected_adapters,
+                        'strategy': recommended_strategy.value,
+                        'expected_benefits': self._describe_composition_benefits(selected_adapters, recommended_strategy)
+                    }
+
+            return {
+                'success': True,
+                'recommendations': recommendations,
+                'total_available_adapters': len(available_adapters),
+                'composition_stats': self.adapter_composer.get_composition_stats()
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to get composition recommendations: {e}")
+            return {'error': str(e)}
+
+    def _describe_composition_benefits(self,
+                                     adapters: List[str],
+                                     strategy: CompositionStrategy) -> List[str]:
+        """Describe the expected benefits of a composition."""
+        benefits = []
+
+        if len(adapters) >= 2:
+            benefits.append("Enhanced reasoning through multi-adapter collaboration")
+
+        if strategy == CompositionStrategy.PARALLEL:
+            benefits.append("Simultaneous processing for comprehensive analysis")
+        elif strategy == CompositionStrategy.SEQUENTIAL:
+            benefits.append("Step-by-step refinement through adapter pipeline")
+        elif strategy == CompositionStrategy.HIERARCHICAL:
+            benefits.append("Structured processing with specialized stages")
+        elif strategy == CompositionStrategy.ATTENTION:
+            benefits.append("Dynamic weighting based on context relevance")
+
+        # Add adapter-specific benefits
+        for adapter_name in adapters:
+            adapter_data = self.adapter_manager.load_adapter(adapter_name)
+            if adapter_data and 'metadata' in adapter_data:
+                description = adapter_data['metadata'].get('description', '')
+                if 'math' in description.lower():
+                    benefits.append("Mathematical reasoning enhancement")
+                elif 'code' in description.lower():
+                    benefits.append("Programming and logic improvement")
+
+        return benefits
     
     def cleanup(self) -> None:
         """Clean up resources and unload everything."""
@@ -333,29 +616,32 @@ class AdaptrixEngine:
 
             logger.info(f"Detected model type: {model_type}, layers: {num_layers}")
 
-            # Calculate target layers based on model size
-            if num_layers <= 12:
-                target_layers = [3, 6, 9]
-            elif num_layers <= 24:
-                target_layers = [6, 12, 18]
-            else:
-                # For larger models, spread across more layers
-                step = num_layers // 4
-                target_layers = [step, step * 2, step * 3]
+            # Use ALL layers for maximum adapter compatibility
+            target_layers = list(range(num_layers))
 
             # Determine target modules based on architecture
             if model_type in ['qwen2', 'qwen']:
-                # Qwen/DeepSeek architecture
-                target_modules = ['self_attn.q_proj', 'self_attn.v_proj', 'mlp.gate_proj']
-                logger.info("Using Qwen2/DeepSeek module names")
+                # Qwen/DeepSeek architecture - USE ALL MODULES FOR MAXIMUM ADAPTER POWER
+                target_modules = [
+                    'self_attn.q_proj', 'self_attn.v_proj', 'self_attn.k_proj', 'self_attn.o_proj',
+                    'mlp.gate_proj', 'mlp.up_proj', 'mlp.down_proj'
+                ]
+                logger.info("Using Qwen2/DeepSeek module names - ALL 7 MODULES FOR MAXIMUM POWER")
             elif model_type in ['llama', 'mistral']:
-                # LLaMA/Mistral architecture
-                target_modules = ['self_attn.q_proj', 'self_attn.v_proj', 'mlp.gate_proj']
-                logger.info("Using LLaMA/Mistral module names")
+                # LLaMA/Mistral architecture - USE ALL MODULES FOR MAXIMUM ADAPTER POWER
+                target_modules = [
+                    'self_attn.q_proj', 'self_attn.v_proj', 'self_attn.k_proj', 'self_attn.o_proj',
+                    'mlp.gate_proj', 'mlp.up_proj', 'mlp.down_proj'
+                ]
+                logger.info("Using LLaMA/Mistral module names - ALL 7 MODULES FOR MAXIMUM POWER")
             elif model_type in ['gpt2', 'gpt_neox']:
                 # GPT-2 style architecture
                 target_modules = ['attn.c_attn', 'mlp.c_fc']
                 logger.info("Using GPT-2 module names")
+            elif model_type == 'phi':
+                # Phi-2 architecture - CORRECT MODULE NAMES
+                target_modules = ['self_attn.q_proj', 'self_attn.v_proj', 'self_attn.k_proj', 'self_attn.dense', 'mlp.fc1', 'mlp.fc2']
+                logger.info("Using Phi-2 module names - CORRECTED")
             else:
                 # Try to detect by examining the model structure
                 logger.info(f"Unknown model type {model_type}, attempting auto-detection")
@@ -436,7 +722,211 @@ class AdaptrixEngine:
             logger.error("Engine not initialized. Call initialize() first.")
             return False
         return True
+
+    def _apply_domain_prompt_engineering(self, prompt: str) -> str:
+        """Apply systematic prompt engineering that prevents artifacts at the source."""
+        try:
+            from .prompt_templates import PromptTemplateManager
+
+            # Get current adapter info
+            current_adapter = None
+            if hasattr(self, 'dynamic_loader') and self.dynamic_loader:
+                loaded_adapters = self.dynamic_loader.get_loaded_adapters()
+                if loaded_adapters:
+                    current_adapter = list(loaded_adapters.keys())[0]
+
+            # Use modular template system
+            enhanced_prompt = PromptTemplateManager.get_structured_prompt(
+                task=prompt,
+                adapter_name=current_adapter
+            )
+
+            logger.debug(f"Applied structured prompt template for adapter: {current_adapter}")
+            return enhanced_prompt
+
+        except Exception as e:
+            logger.warning(f"Structured prompt engineering failed: {e}")
+            return prompt
+
+    def _post_process_response_minimal_cleanup(self, response: str, original_prompt: str = "") -> str:
+        """
+        Clean, modular post-processing using the existing ResponseFormatter.
+        """
+        try:
+            from .prompt_templates import ResponseFormatter
+
+            if not response:
+                return "I apologize, but I couldn't generate a response."
+
+            # Clean encoding issues
+            response = self._clean_encoding_issues(response)
+
+            # Detect domain for formatting
+            current_adapter = None
+            if hasattr(self, 'dynamic_loader') and self.dynamic_loader:
+                loaded_adapters = self.dynamic_loader.get_loaded_adapters()
+                if loaded_adapters:
+                    current_adapter = list(loaded_adapters.keys())[0]
+
+            domain = self._detect_domain_from_adapter(current_adapter, original_prompt)
+
+            # Use modular response formatter
+            response = ResponseFormatter.format_response(response, domain)
+
+            return response
+
+        except Exception as e:
+            logger.error(f"Post-processing failed: {e}")
+            return self._clean_encoding_issues(response) if response else "Error processing response."
+
+    def _remove_critical_artifacts_only(self, response: str) -> str:
+        """This method is now deprecated - artifacts should be prevented at source."""
+        # Remove only basic encoding issues, no hardcoded pattern matching
+        import re
+        # Remove only non-ASCII characters that shouldn't be in English responses
+        response = re.sub(r'[^\x00-\x7F]+', '', response)
+        return response
+
+    def _detect_domain_from_adapter(self, adapter_name: str, prompt: str = "") -> str:
+        """
+        Flexible domain detection that works with any adapter naming pattern.
+        Future-proof for new adapters.
+        """
+        if not adapter_name:
+            # No adapter loaded, classify from prompt content
+            return self._classify_domain_from_prompt(prompt)
+        
+        adapter_lower = adapter_name.lower()
+        
+        # Flexible pattern matching for adapter domains
+        if any(keyword in adapter_lower for keyword in ['code', 'programming', 'python', 'dev']):
+            return 'programming'
+        elif any(keyword in adapter_lower for keyword in ['math', 'calculator', 'equation']):
+            return 'mathematics'
+        elif any(keyword in adapter_lower for keyword in ['news', 'journalism', 'article']):
+            return 'journalism'
+        else:
+            # Fallback to prompt-based classification
+            return self._classify_domain_from_prompt(prompt)
     
+    def _classify_domain_from_prompt(self, prompt: str) -> str:
+        """
+        Classify domain based on prompt content when adapter name is unclear.
+        """
+        if not prompt:
+            return 'general'
+            
+        prompt_lower = prompt.lower()
+        
+        # Programming indicators
+        programming_keywords = ['function', 'code', 'python', 'def', 'class', 'algorithm', 'script', 'program', 'implement']
+        if any(keyword in prompt_lower for keyword in programming_keywords):
+            return 'programming'
+        
+        # Math indicators
+        math_keywords = ['calculate', 'solve', 'equation', 'math', 'formula', 'number']
+        if any(keyword in prompt_lower for keyword in math_keywords):
+            return 'mathematics'
+        
+        # News indicators  
+        news_keywords = ['news', 'report', 'article', 'headline', 'breaking']
+        if any(keyword in prompt_lower for keyword in news_keywords):
+            return 'journalism'
+        
+        return 'general'
+
+    def _clean_encoding_issues(self, response: str) -> str:
+        """Clean encoding and corruption issues."""
+        try:
+            # Ensure proper UTF-8 encoding
+            if isinstance(response, bytes):
+                response = response.decode('utf-8', errors='replace')
+
+            # Remove null characters and problematic characters
+            response = response.replace('\x00', '').replace('\ufffd', '').replace('�', '')
+
+            # Remove excessive whitespace
+            response = ' '.join(response.split())
+
+            # Check for corruption (too many special characters)
+            if len(response) > 0:
+                special_char_ratio = sum(1 for c in response if not c.isalnum() and c not in ' .,!?-:;()[]{}"\n') / len(response)
+                if special_char_ratio > 0.4:  # More than 40% special characters
+                    logger.warning("Response appears heavily corrupted")
+                    return "I apologize, but the response appears to be corrupted. Please try again."
+
+            return response.strip()
+
+        except Exception as e:
+            logger.error(f"Encoding cleanup failed: {e}")
+            return "Error: Response contains invalid characters."
+
+    def _build_context_prompt(self, current_prompt: str) -> str:
+        """
+        Build a context-aware prompt using conversation history.
+
+        Args:
+            current_prompt: The current user input
+
+        Returns:
+            Context-enhanced prompt
+        """
+        if not self.conversation_history:
+            return current_prompt
+
+        # For single queries without context keywords, don't use context
+        context_keywords = ['what did i', 'my name', 'i told you', 'remember', 'earlier', 'before']
+        if not any(keyword in current_prompt.lower() for keyword in context_keywords):
+            return current_prompt
+
+        # Build context from recent history
+        context_parts = []
+
+        # Add recent exchanges (limit to avoid token overflow)
+        recent_history = self.conversation_history[-2:]  # Last 2 exchanges only
+
+        for exchange in recent_history:
+            context_parts.append(f"Previous: {exchange['user']} -> {exchange['assistant'][:100]}...")
+
+        # Add current prompt
+        context_parts.append(f"Current question: {current_prompt}")
+
+        return "\n".join(context_parts)
+
+    def _add_to_history(self, user_input: str, assistant_response: str) -> None:
+        """
+        Add an exchange to conversation history.
+
+        Args:
+            user_input: User's input
+            assistant_response: Assistant's response
+        """
+        exchange = {
+            'user': user_input,
+            'assistant': assistant_response,
+            'timestamp': time.time()
+        }
+
+        self.conversation_history.append(exchange)
+
+        # Trim history if it gets too long
+        if len(self.conversation_history) > self.max_history_length:
+            self.conversation_history = self.conversation_history[-self.max_history_length:]
+
+    def clear_conversation_history(self) -> None:
+        """Clear the conversation history."""
+        self.conversation_history = []
+        logger.info("Conversation history cleared")
+
+    def get_conversation_history(self) -> List[Dict[str, Any]]:
+        """Get the current conversation history."""
+        return self.conversation_history.copy()
+
+    def set_conversation_context(self, enabled: bool) -> None:
+        """Enable or disable conversation context."""
+        self.use_conversation_context = enabled
+        logger.info(f"Conversation context {'enabled' if enabled else 'disabled'}")
+
     def benchmark_adapter(self, adapter_name: str, test_prompts: List[str]) -> Dict[str, Any]:
         """
         Benchmark an adapter's performance.

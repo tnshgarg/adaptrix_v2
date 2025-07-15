@@ -30,23 +30,20 @@ pip install -e .
 
 ## 🚀 Quick Start
 
-### Command Line Interface
+### Train Custom Adapters
 
 ```bash
-# List available adapters
-adaptrix list
+# Train a math reasoning adapter (quick demo)
+python scripts/create_adapter.py math --quick --test
 
-# Load an adapter
-adaptrix load math_reasoning
+# Train with more data
+python scripts/create_adapter.py math --samples 1000 --epochs 3
 
-# Query with an adapter
-adaptrix query "Solve: 2x + 5 = 13" --adapter math_reasoning
+# Train multiple domain adapters
+python scripts/create_adapter.py all --samples 500 --epochs 2
 
-# Check system status
-adaptrix status
-
-# Show active adapters
-adaptrix active
+# Run complete system demo
+python scripts/demo_complete_system.py
 ```
 
 ### Python API
@@ -54,23 +51,23 @@ adaptrix active
 ```python
 from src.core.engine import AdaptrixEngine
 
-# Initialize engine
-engine = AdaptrixEngine()
+# Initialize engine with DeepSeek model
+engine = AdaptrixEngine("deepseek-ai/deepseek-r1-distill-qwen-1.5b", "cpu")
 engine.initialize()
 
-# Load an adapter
-engine.load_adapter("math_reasoning")
+# Load your custom trained adapter
+engine.load_adapter("math_adapter")
 
 # Generate response
-response = engine.query("What is 15% of 240?")
+response = engine.generate("Solve this step by step: What is 15% of 240?")
 print(response)
 
-# Switch adapters
-engine.switch_adapter("math_reasoning", "code_generation")
+# Switch to another adapter
+engine.load_adapter("creative_writing")
 
-# Generate code
-code = engine.query("Write a Python function to calculate fibonacci numbers")
-print(code)
+# Generate creative content
+story = engine.generate("Write a short story about a robot learning to paint")
+print(story)
 
 # Cleanup
 engine.cleanup()
@@ -114,15 +111,24 @@ engine.cleanup()
 Create your own adapters by training LoRA weights on specialized datasets:
 
 ```python
-from src.training.adapter_trainer import AdapterTrainer
+from src.training.trainer import train_adapter
+from src.training.config import TrainingConfig
 
-trainer = AdapterTrainer(base_model="microsoft/DialoGPT-medium")
-trainer.train_adapter(
-    adapter_name="custom_domain",
-    dataset_path="path/to/dataset",
-    target_layers=[6, 12, 18]
+# Configure training for your domain
+config = TrainingConfig(
+    model_name="deepseek-ai/deepseek-r1-distill-qwen-1.5b",
+    dataset_name="gsm8k",  # or your custom dataset
+    adapter_name="my_custom_adapter",
+    num_epochs=3,
+    batch_size=2,
+    learning_rate=1e-4
 )
+
+# Train the adapter
+results = train_adapter(config)
 ```
+
+See [TRAINING_GUIDE.md](TRAINING_GUIDE.md) for detailed training instructions.
 
 ## 🔧 Configuration
 
@@ -162,17 +168,23 @@ Adaptrix achieves significant performance improvements over base models:
 ```
 adaptrix/
 ├── src/
-│   ├── models/          # Base model management
-│   ├── injection/       # LoRA injection engine
-│   ├── adapters/        # Adapter management
 │   ├── core/           # Core engine and dynamic loader
+│   ├── adapters/       # Adapter management and validation
+│   ├── injection/      # LoRA injection engine
+│   ├── models/         # Base model management
+│   ├── training/       # Custom LoRA training pipeline
 │   ├── routing/        # Query routing system
-│   ├── training/       # Adapter training pipeline
 │   ├── monitoring/     # Performance monitoring
 │   ├── cli/           # Command-line interface
-│   └── web/           # Web interface
-├── adapters/          # Adapter storage
+│   ├── web/           # Web interface
+│   └── utils/         # Utility functions
+├── scripts/           # Training and demo scripts
+│   ├── create_adapter.py        # Main training pipeline
+│   ├── demo_complete_system.py  # System demonstration
+│   └── convert_peft_to_adaptrix.py  # Format converter
+├── adapters/          # Trained adapter storage
 ├── configs/          # Configuration files
+├── examples/         # Usage examples
 ├── tests/           # Test suite
 └── docs/           # Documentation
 ```
